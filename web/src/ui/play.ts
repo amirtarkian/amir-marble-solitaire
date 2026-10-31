@@ -5,10 +5,12 @@ import { type App, type Screen, storageGet, storageSet } from "../app";
 import { type Cell, HOLES, label } from "../board/geometry";
 import { Cancelled } from "../coach/client";
 import { heatColor, holeSolution } from "../data/solutions";
-import { type Move, startBoard } from "../game/state";
+import { type SavedGame, Saves, newGameId } from "../game/saves";
+import { Game, type Move, makeMove, startBoard, toWire } from "../game/state";
 import { sounds } from "../render/audio";
 import { GameController } from "./controller";
 import { clear, flash, formatTime, h, plural } from "./dom";
+import { miniBoard } from "./miniboard";
 import { LinePlayer } from "./playback";
 import { ReviewScreen } from "./review";
 
@@ -18,7 +20,7 @@ const LEVELS: { id: CoachLevel; name: string; blurb: string }[] = [
   { id: "off", name: "Off", blurb: "No help while you play. You still get the full review at the end." },
   { id: "warn", name: "Warn", blurb: "The board flashes red when a jump makes your best possible finish worse." },
   { id: "hint", name: "Hint", blurb: "See your best possible finish live, and ask for the best move." },
-  { id: "show", name: "Show me", blurb: "Let the coach play its best move, or watch its whole line from here." },
+  { id: "show", name: "Show me", blurb: "Reveal the coach's move as an arrow (you still play it), or step through its whole line from here." },
 ];
 
 const fullBoard = () => Uint8Array.from({ length: 49 }, (_, i) => (HOLES.includes(i) ? 1 : 0));
@@ -35,14 +37,22 @@ export class PlayScreen implements Screen {
   private spoilers = false;
   private keyHandler = (e: KeyboardEvent) => this.onKey(e);
   private els: Record<string, HTMLElement> = {};
+  private saves = new Saves();
+  private saveId: string | null = null;
+  private onPageHide = () => this.persist();
 
   constructor(private app: App, resume?: { start: Cell; moves: Move[] }) {
     window.addEventListener("keydown", this.keyHandler);
+    window.addEventListener("pagehide", this.onPageHide);
+    const active = this.saves.activeId();
+    const saved = active ? this.saves.get(active) : undefined;
     if (resume) this.begin(resume.start, resume.moves);
+    else if (saved) this.resumeSaved(saved);
     else this.pick();
   }
 
   unmount() {
+    this.persist();
     this.stopTimer();
     this.preview?.stop();
     this.ctl?.detach();
@@ -50,12 +60,21 @@ export class PlayScreen implements Screen {
     this.app.view.setHeat(null);
     this.app.view.setHint(null);
     window.removeEventListener("keydown", this.keyHandler);
+    window.removeEventListener("pagehide", this.onPageHide);
   }
 
   // ── Choosing the starting hole ───────────────────────────────────────
 
   private pick() {
-    const { view, panel } = this.app;
+    const { view } = this.app;
+    // Leaving a game keeps it in the list, unless no move was made in it.
+    const g = this.ctl?.game;
+    if (g && this.saveId) {
+      if (g.canUndo) this.persist();
+      else this.saves.remove(this.saveId);
+    }
+    this.saves.setActive(null);
+    this.saveId = null;
     this.ctl?.detach();
     this.ctl = null;
     this.stopTimer();
@@ -63,6 +82,11 @@ export class PlayScreen implements Screen {
     view.setMode("pick");
     view.events = { onHoleClick: (cell) => void this.choose(cell) };
     this.showSpoilers(this.spoilers);
+    this.renderPick();
+  }
+
+  private renderPick() {
+    const { panel } = this.app;
     const spoilerToggle = h("input", { type: "checkbox", checked: this.spoilers, onchange: (e: Event) => this.showSpoilers((e.target as HTMLInputElement).checked) });
     clear(panel);
     panel.append(
@@ -77,7 +101,59 @@ export class PlayScreen implements Screen {
         ),
         h("label.toggle", {}, spoilerToggle, " Show the best possible finish for every hole"),
       ),
+      this.gamesCard(),
     );
+  }
+
+  // ── Saved games ──────────────────────────────────────────────────────
+
+  private persist() {
+    const g = this.ctl?.game;
+    if (!g || !this.saveId) return;
+    this.saves.put({ id: this.saveId, start: g.start, moves: g.history.map(toWire), elapsed: this.elapsed, updated: Date.now() });
+  }
+
+  private resumeSaved(saved: SavedGame) {
+    this.persist();
+    try {
+      this.begin(saved.start, saved.moves.map(([f, t]) => makeMove(f, t)), { id: saved.id, elapsed: saved.elapsed });
+    } catch {
+      this.saves.remove(saved.id); // unreadable save
+      this.pick();
+    }
+  }
+
+  /** Every saved game except the one on the board, newest first. */
+  private gamesCard(): Node {
+    const rows: HTMLElement[] = [];
+    for (const saved of this.saves.list()) {
+      if (saved.id === this.saveId) continue;
+      let game: Game;
+      try {
+        game = Game.replay(saved.start, saved.moves);
+      } catch {
+        continue;
+      }
+      const status = game.isOver
+        ? `Finished · ${marbleWord(game.marbles)} left`
+        : `${game.marbles} left · ${plural(saved.moves.length, "move")} · ${formatTime(saved.elapsed)}`;
+      rows.push(h("li.game-row",
+        { onclick: () => this.resumeSaved(saved), title: "Switch to this game" },
+        miniBoard(saved.start, saved.moves, 46),
+        h("div.who", {}, h("span.name", {}, `Started at ${label(saved.start)}`), h("span.muted", {}, status)),
+        h("button.icon.small", {
+          title: "Delete this game",
+          onclick: (e: Event) => {
+            e.stopPropagation();
+            this.saves.remove(saved.id);
+            if (this.ctl) this.renderPlay();
+            else this.renderPick();
+          },
+        }, "✕"),
+      ));
+    }
+    if (!rows.length) return document.createDocumentFragment();
+    return h("section.card", {}, h("h3", {}, this.ctl ? "Your other games" : "Continue a game"), h("ul.games", {}, ...rows));
   }
 
   private showSpoilers(on: boolean) {
@@ -96,14 +172,19 @@ export class PlayScreen implements Screen {
 
   // ── Playing ──────────────────────────────────────────────────────────
 
-  private begin(start: Cell, moves: Move[]) {
+  /** Start or resume a game; pass the saved id to keep writing to the same save. */
+  private begin(start: Cell, moves: Move[], opts: { id?: string | null; elapsed?: number } = {}) {
     this.preview?.stop();
     this.preview = null;
     this.app.view.setHeat(null);
     if (moves.length === 0) this.app.view.setBoard(startBoard(start));
+    this.ctl?.detach();
     this.ctl = new GameController(this.app.view, start, moves);
     this.ctl.onChange = (kind) => this.onPositionChange(kind === "move");
-    this.elapsed = 0;
+    this.saveId = opts.id ?? newGameId();
+    this.saves.setActive(this.saveId);
+    this.elapsed = opts.elapsed ?? 0;
+    this.persist();
     this.startTimer();
     this.renderPlay();
     this.onPositionChange();
@@ -152,9 +233,10 @@ export class PlayScreen implements Screen {
         {},
         h("div.card-head", {}, h("h2", {}, `Started at ${label(g.start)}`), best !== null ? h("span.pill", {}, `best possible: ${best}`) : null),
         h("div.stats", {}, marbles, moves, time),
-        h("div.row", {}, this.els.undo, this.els.redo, h("span.spacer"), h("button.ghost", { onclick: () => this.pick() }, "New game")),
+        h("div.row", {}, this.els.undo, this.els.redo, h("span.spacer"), h("button.ghost", { onclick: () => this.pick(), title: "This game stays saved below" }, "New game")),
       ),
       h("section.card", {}, h("div.card-head", {}, h("h3", {}, "Coach")), this.els.seg, this.els.coach),
+      this.gamesCard(),
     );
     this.updateStats();
     this.renderCoach();
@@ -184,6 +266,8 @@ export class PlayScreen implements Screen {
     ctl.detach();
     this.ctl = null;
     this.stopTimer();
+    if (this.saveId) this.saves.remove(this.saveId);
+    this.saveId = null;
     await this.app.view.restoreMarble(ctl.game.start);
     this.pick();
   }
@@ -213,7 +297,7 @@ export class PlayScreen implements Screen {
     if (this.level === "show") {
       body.append(h("div.row",
         {},
-        h("button.primary", { onclick: () => void this.coachMove() }, "Coach's move"),
+        h("button.primary", { onclick: () => void this.coachMove() }, "Show coach's move"),
         h("button", { onclick: () => void this.showLine() }, "Show the full line"),
       ));
     }
@@ -234,6 +318,7 @@ export class PlayScreen implements Screen {
     const g = this.ctl!.game;
     const gen = ++this.gen;
     this.updateStats();
+    this.persist();
     this.setStatus(null);
     this.app.coach?.cancel("live");
     void this.ctl!.settle().then(() => {
@@ -289,12 +374,13 @@ export class PlayScreen implements Screen {
       const line = await coach.bestLine(g.bits(), { priority: 10, group: "live" });
       if (gen !== this.gen || !line.length) return;
       this.app.view.setHint(line[0]);
-      this.setStatus([`Try ${label(line[0].from)} → ${label(line[0].to)}.`], "hint");
+      this.setStatus([`Try ${label(line[0].from)} → ${label(line[0].to)}: follow the arrow.`], "hint");
     } catch (e) {
       if (!(e instanceof Cancelled)) throw e;
     }
   }
 
+  /** Reveal the coach's move as an arrow; the player still makes it. */
   private async coachMove() {
     const coach = this.app.coach, ctl = this.ctl;
     if (!coach || !ctl || ctl.game.isOver) return;
@@ -302,7 +388,9 @@ export class PlayScreen implements Screen {
     this.setStatus([h("span.thinking", {}, "Thinking…")]);
     try {
       const line = await coach.bestLine(ctl.game.bits(), { priority: 10, group: "live" });
-      if (gen === this.gen && line.length) await ctl.play(line[0]);
+      if (gen !== this.gen || !line.length) return;
+      this.app.view.setHint(line[0]);
+      this.setStatus([`Coach's move: ${label(line[0].from)} → ${label(line[0].to)}. Follow the arrow and play it yourself.`], "hint");
     } catch (e) {
       if (!(e instanceof Cancelled)) throw e;
     }
@@ -347,10 +435,7 @@ export class PlayScreen implements Screen {
     player.stop();
     this.preview = null;
     const moves = adopt ? [...ctl.game.history, ...player.moves] : [...ctl.game.history];
-    const elapsed = this.elapsed;
-    this.begin(ctl.game.start, moves);
-    this.elapsed = elapsed;
-    this.startTimer();
+    this.begin(ctl.game.start, moves, { id: this.saveId, elapsed: this.elapsed });
   }
 
   // ── End of game ──────────────────────────────────────────────────────
@@ -397,11 +482,11 @@ export class PlayScreen implements Screen {
     const r = new ReviewScreen(this.app, start, moves, {
       onPlayFrom: (prefix) => {
         r.unmount();
-        this.begin(start, prefix);
+        this.begin(start, prefix, { id: this.saveId, elapsed: this.elapsed });
       },
       onClose: () => {
         r.unmount();
-        this.begin(start, moves);
+        this.begin(start, moves, { id: this.saveId, elapsed: this.elapsed });
       },
     });
   }

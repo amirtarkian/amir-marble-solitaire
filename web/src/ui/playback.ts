@@ -32,7 +32,11 @@ export class LinePlayer {
   private keyHandler = (e: KeyboardEvent) => this.onKey(e);
 
   /** The view must already show the position the line starts from. */
-  constructor(private view: BoardView, private line: Move[], private opts: { caption?: (i: number) => string } = {}) {
+  constructor(
+    private view: BoardView,
+    private line: Move[],
+    private opts: { caption?: (i: number) => string; onStep?: (i: number) => void } = {},
+  ) {
     this.playBtn = h("button.primary", { onclick: () => this.toggle(), title: "Play / pause (space)" });
     this.backBtn = h("button", { onclick: () => void this.step(-1), title: "Previous move (←)" }, "‹ Back");
     this.nextBtn = h("button", { onclick: () => void this.step(1), title: "Next move (→)" }, "Next ›");
@@ -80,6 +84,7 @@ export class LinePlayer {
     this.view.setMoves(interactive ? [next] : []);
     this.view.setHint(interactive ? next : null);
     this.view.events = interactive ? { onMove: () => void this.step(1) } : {};
+    this.opts.onStep?.(this.index);
   }
 
   private setSpeed(s: number) {

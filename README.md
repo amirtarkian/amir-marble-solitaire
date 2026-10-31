@@ -38,10 +38,18 @@ published by George Bell, which the solver checks on every run.
 ## Features
 
 - **Coach levels:** Off, Warn (flags a jump that makes your best possible finish worse),
-  Hint (live best-possible meter plus a best-move button), Show me (the coach plays its
-  move or its whole line).
-- **Game review:** every move graded optimal or "+k marbles", with "what should I have
-  played?" and the best line from any point.
+  Hint (live best-possible meter plus a best-move button), Show me (reveals the coach's
+  move as a 3D arrow for you to play, or its whole line). Suggestions never play
+  themselves.
+- **Game review:** a chess.com-style graph of your odds of finishing with 1, 2, 3 or 4+
+  marbles after every move, the solver's exact best-possible finish underneath, and
+  markers where you blundered. Hover for details, click to jump, ← → to step, or replay
+  your game. Every move is graded optimal or "+k marbles", with "what should I have
+  played?" and the best line from any point. (The odds model: each remaining move is a
+  slip with probability 1 − accuracy, costing one marble; compare your accuracy with
+  Beginner, Club and Expert.)
+- **Saved games:** progress is kept in your browser across tabs and reloads, and you
+  can keep several games going and switch between them.
 - **Step through any line:** every best line starts paused with the next move glowing.
   Play it yourself on the board, step with Back/Next or the arrow keys, or press Play at
   ½×, 1×, 2× or 4×.

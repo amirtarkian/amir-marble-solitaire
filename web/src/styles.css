@@ -347,3 +347,60 @@ svg.mini .mini-hole { fill: #2b180d; }
 .chip-btn { padding: 5px 10px; font-size: 13px; }
 .chip-btn.on { border-color: var(--gold); background: rgba(242, 193, 78, 0.12); }
 .opening-body { display: flex; flex-direction: column; gap: 10px; font-size: 14px; }
+
+/* ── Review graph ────────────────────────────────────────── */
+
+.chart { position: relative; }
+svg.odds-chart { width: 100%; height: auto; display: block; cursor: crosshair; touch-action: pan-y; }
+.odds-chart .grid { stroke: rgba(255, 236, 214, 0.1); stroke-width: 1; }
+.odds-chart .axis { fill: var(--muted); font: 9px var(--sans); }
+.odds-chart .series { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.odds-chart .cursor { stroke: rgba(255, 244, 230, 0.75); stroke-width: 1.2; }
+.odds-chart .cursor.hover { stroke-dasharray: 3 3; stroke: rgba(255, 244, 230, 0.45); }
+.odds-chart .blunder-line { stroke: rgba(229, 96, 60, 0.35); stroke-width: 1; stroke-dasharray: 2 3; }
+.odds-chart .blunder { stroke: #1d1510; stroke-width: 1.5; }
+.odds-chart .blunder.minor { fill: var(--gold); }
+.odds-chart .blunder.major { fill: var(--warn); }
+.chart-tip {
+  display: none;
+  position: absolute;
+  top: 4px;
+  min-width: 128px;
+  background: rgba(24, 18, 13, 0.96);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 7px 10px;
+  font-size: 12px;
+  pointer-events: none;
+  box-shadow: 0 6px 20px #0008;
+}
+.tip-title { font-weight: 600; margin-bottom: 2px; }
+.tip-best { color: var(--muted); margin-bottom: 4px; }
+.tip-row { display: flex; align-items: center; gap: 4px; }
+.tip-val { margin-left: auto; font-variant-numeric: tabular-nums; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--muted); margin-top: 4px; }
+.chart-legend strong { color: var(--text); font-weight: 600; }
+.legend-title { color: var(--text); }
+.skill-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.seg.skill { grid-template-columns: repeat(4, 1fr); flex: 1; }
+.seg.skill button { padding: 4px 2px; font-size: 12px; }
+.model-note { font-size: 13px; color: var(--muted); }
+.model-note summary { cursor: pointer; }
+.model-note p { margin-top: 6px; color: var(--muted); font-size: 13px; }
+
+/* ── Saved games ─────────────────────────────────────────── */
+
+.games { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.game-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.game-row:hover { background: rgba(255, 244, 230, 0.07); }
+.game-row .icon.small { padding: 2px 8px; min-width: 0; font-size: 12px; background: transparent; border-color: transparent; color: var(--muted); }
+.game-row .icon.small:hover { color: var(--warn); }

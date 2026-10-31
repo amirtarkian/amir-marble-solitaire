@@ -68,6 +68,8 @@ export class BoardView {
   private selected: Cell | null = null;
   private hovered: Cell | null = null;
   private hint: Move | null = null;
+  private arrow = new THREE.Group();
+  private arrowMat = new THREE.MeshBasicMaterial({ color: "#3dff9a", transparent: true, opacity: 0.95, depthTest: false });
   private press: { cell: Cell | null; x: number; y: number; dragging: boolean; id: number } | null = null;
   private dragTarget: Cell | null = null;
   private lastTick = performance.now();
@@ -165,6 +167,10 @@ export class BoardView {
       this.targetRings.push(ring);
       s.add(ring);
     }
+
+    this.arrow.visible = false;
+    this.arrow.renderOrder = 10;
+    s.add(this.arrow);
 
     const mats = stoneMaterials(TOTAL_MARBLES);
     for (let i = 0; i < TOTAL_MARBLES; i++) {
@@ -355,10 +361,39 @@ export class BoardView {
 
   // ── Highlights ───────────────────────────────────────────────────────
 
-  /** Show (or clear) a suggested move. */
+  /** Show (or clear) a suggested move: an arrow over the board that the player follows. */
   setHint(m: Move | null) {
     this.hint = m;
+    this.buildArrow(m);
     this.refreshTargets();
+  }
+
+  /** An arc from the jumping marble, over the one it captures, down into the target hole. */
+  private buildArrow(m: Move | null) {
+    for (const child of [...this.arrow.children]) {
+      this.arrow.remove(child);
+      (child as THREE.Mesh).geometry.dispose();
+    }
+    this.arrow.visible = !!m;
+    if (!m) return;
+    const curve = new THREE.QuadraticBezierCurve3(
+      holeVec(m.from, REST_Y + 0.45),
+      holeVec(m.over, REST_Y + 1.35),
+      holeVec(m.to, REST_Y + 0.42),
+    );
+    const headStart = 0.76;
+    const shaft = new THREE.Mesh(
+      new THREE.TubeGeometry(new CurvePart(curve, 0, headStart), 32, 0.085, 12, false),
+      this.arrowMat,
+    );
+    const tip = curve.getPoint(1), base = curve.getPoint(headStart);
+    const head = new THREE.Mesh(new THREE.ConeGeometry(0.22, tip.distanceTo(base), 20), this.arrowMat);
+    head.position.copy(base).add(tip).multiplyScalar(0.5);
+    head.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tip.clone().sub(base).normalize());
+    for (const mesh of [shaft, head]) {
+      mesh.renderOrder = 10;
+      this.arrow.add(mesh);
+    }
   }
 
   /** Coloured rings and labels around holes (solutions explorer); null clears them. */
@@ -434,6 +469,7 @@ export class BoardView {
     if (this.hovered !== null && this.hovered !== this.selected) glow(this.hovered, SELECT_GLOW, 0.3);
     glow(this.selected, SELECT_GLOW, 0.75 + 0.35 * pulse);
     this.targetRings[5].material.opacity = 0.75 + 0.25 * pulse;
+    this.arrowMat.opacity = 0.8 + 0.2 * pulse;
     this.ghosts.forEach((g, i) => {
       if (!g.visible) return;
       const near = this.press?.dragging && this.dragTarget !== null && g.position.distanceTo(holeVec(this.dragTarget)) < 0.01;
@@ -566,6 +602,17 @@ export class BoardView {
     const m = this.at[cell];
     if (m) void this.arc(m, m.mesh.position.clone(), holeVec(cell), 0, 180).then(() => sounds.land());
     this.select(null);
+  }
+}
+
+/** The stretch [t0, t1] of a curve, as a curve of its own. */
+class CurvePart extends THREE.Curve<THREE.Vector3> {
+  constructor(private curve: THREE.Curve<THREE.Vector3>, private t0: number, private t1: number) {
+    super();
+  }
+
+  override getPoint(t: number, target = new THREE.Vector3()): THREE.Vector3 {
+    return this.curve.getPoint(this.t0 + (this.t1 - this.t0) * t, target);
   }
 }
 
