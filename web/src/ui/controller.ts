@@ -19,6 +19,7 @@ export class GameController {
     view.setBoard(this.game.board);
     view.setMoves(this.game.legalMoves());
     view.events = { onMove: (m) => void this.play(m) };
+    if (import.meta.env.DEV) (window as unknown as { __ctl: GameController }).__ctl = this;
   }
 
   /** Run animations one after another, so fast clicks never interleave. */

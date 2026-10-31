@@ -15,6 +15,7 @@ async function boot() {
   document.getElementById("loading")?.remove();
   const [coach, solutions] = await Promise.all([Coach.create(), loadSolutions()]);
   const app: App = { view, coach, solutions, panel };
+  if (import.meta.env.DEV) Object.assign(window, { __app: app });
 
   let screen: Screen | null = null;
   const route = () => {

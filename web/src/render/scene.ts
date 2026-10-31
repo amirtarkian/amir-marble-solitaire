@@ -32,7 +32,7 @@ export interface HeatCell {
 const TOTAL_MARBLES = 37;
 const TAP_SLOP = 6; // px of movement before a press becomes a drag
 const HOLE_PICK_RADIUS = 0.5;
-const SELECT_GLOW = new THREE.Color("#ffd27a");
+const SELECT_GLOW = new THREE.Color("#ffb347");
 const HINT_GLOW = new THREE.Color("#5dffa8");
 
 interface Marble {
@@ -153,12 +153,12 @@ export class BoardView {
     const sphere = new THREE.SphereGeometry(MARBLE_R, 48, 32);
     const ghostMat = new THREE.MeshBasicMaterial({ color: "#a8ffd8", transparent: true, opacity: 0.28, depthWrite: false });
     const targetGeo = new THREE.RingGeometry(MARBLE_R * 0.55, MARBLE_R + 0.09, 48);
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 6; i++) {
       const g = new THREE.Mesh(sphere, ghostMat.clone());
       g.visible = false;
       this.ghosts.push(g);
       s.add(g);
-      const ring = new THREE.Mesh(targetGeo, new THREE.MeshBasicMaterial({ color: "#7dffc0", transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+      const ring = new THREE.Mesh(targetGeo, new THREE.MeshBasicMaterial({ color: "#7dffc0", transparent: true, depthWrite: false }));
       ring.rotation.x = -Math.PI / 2;
       ring.visible = false;
       ring.renderOrder = 3;
@@ -410,6 +410,12 @@ export class BoardView {
     const targets = this.selected === null ? [] : this.movesFrom(this.selected).map((m) => m.to);
     targets.forEach((t, i) => show(i, t, "#a8ffd8"));
     if (this.hint && this.selected === null) show(4, this.hint.to, "#5dffa8");
+    if (this.selected !== null) {
+      const r = this.targetRings[5];
+      r.position.copy(holeVec(this.selected, FIELD_Y + 0.01));
+      r.material.color.set("#ffc04d");
+      r.visible = true;
+    }
   }
 
   private animateHighlights() {
@@ -424,9 +430,10 @@ export class BoardView {
       m.mat.emissive.copy(color);
       m.mat.emissiveIntensity = k;
     };
-    if (this.hint && this.selected === null) glow(this.hint.from, HINT_GLOW, 0.25 + 0.35 * pulse);
-    if (this.hovered !== null && this.hovered !== this.selected) glow(this.hovered, SELECT_GLOW, 0.18);
-    glow(this.selected, SELECT_GLOW, 0.35 + 0.15 * pulse);
+    if (this.hint && this.selected === null) glow(this.hint.from, HINT_GLOW, 0.45 + 0.5 * pulse);
+    if (this.hovered !== null && this.hovered !== this.selected) glow(this.hovered, SELECT_GLOW, 0.3);
+    glow(this.selected, SELECT_GLOW, 0.75 + 0.35 * pulse);
+    this.targetRings[5].material.opacity = 0.75 + 0.25 * pulse;
     this.ghosts.forEach((g, i) => {
       if (!g.visible) return;
       const near = this.press?.dragging && this.dragTarget !== null && g.position.distanceTo(holeVec(this.dragTarget)) < 0.01;

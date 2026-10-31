@@ -102,7 +102,7 @@ export class PlayScreen implements Screen {
     this.app.view.setHeat(null);
     if (moves.length === 0) this.app.view.setBoard(startBoard(start));
     this.ctl = new GameController(this.app.view, start, moves);
-    this.ctl.onChange = () => this.onPositionChange();
+    this.ctl.onChange = (kind) => this.onPositionChange(kind === "move");
     this.elapsed = 0;
     this.startTimer();
     this.renderPlay();
@@ -212,7 +212,7 @@ export class PlayScreen implements Screen {
   }
 
   /** After every move, undo or redo: stats, coach feedback, end of game. */
-  private onPositionChange() {
+  private onPositionChange(newMove = false) {
     const g = this.ctl!.game;
     const gen = ++this.gen;
     this.updateStats();
@@ -223,8 +223,7 @@ export class PlayScreen implements Screen {
     });
     if (!this.app.coach || this.level === "off") return;
     this.refreshMeter();
-    const last = g.history[g.history.length - 1];
-    if (this.level === "warn" && last) void this.checkMove(gen);
+    if (this.level === "warn" && newMove) void this.checkMove(gen);
   }
 
   private async refreshMeter() {
