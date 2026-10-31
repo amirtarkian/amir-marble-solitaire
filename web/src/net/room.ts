@@ -1,7 +1,7 @@
 // Peer-to-peer room over WebRTC (Trystero, signalling through public Nostr relays).
 // No server: friends who open the same room link find each other directly.
 
-import { joinRoom, selfId } from "trystero";
+import { joinRoom, pauseRelayReconnection, resumeRelayReconnection, selfId } from "trystero";
 import type { RaceEvent, RaceMessage } from "./race";
 
 const APP_ID = "amir-marble-solitaire-v1";
@@ -12,6 +12,7 @@ export class RaceRoom {
   private action: { send: (data: RaceMessage, opts?: { target?: string }) => Promise<void> };
 
   constructor(roomId: string, handlers: { onEvent: (ev: RaceEvent) => void; onPeerJoin: (id: string) => void }) {
+    resumeRelayReconnection();
     this.room = joinRoom({ appId: APP_ID }, roomId);
     const action = this.room.makeAction<RaceMessage>("race");
     action.onMessage = (data, ctx) => handlers.onEvent({ ...data, from: ctx.peerId } as RaceEvent);
@@ -30,5 +31,7 @@ export class RaceRoom {
 
   leave() {
     void this.room.leave();
+    // Stop retrying relays (some public ones are always down) until the next room.
+    pauseRelayReconnection();
   }
 }
