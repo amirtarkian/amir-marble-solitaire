@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="37-hole French marble solitaire in 3D, with an exact coach and online races." />
+    <title>Marble Solitaire</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%236e3f22'/%3E%3Ccircle cx='32' cy='32' r='13' fill='%23e8774a'/%3E%3Ccircle cx='27' cy='27' r='4' fill='%23fff' opacity='.6'/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#/play"><span class="logo"></span>Marble Solitaire</a>
+      <nav>
+        <a href="#/play" data-route="play">Play</a>
+        <a href="#/solutions" data-route="solutions">Solutions</a>
+        <a href="#/race" data-route="race">Race friends</a>
+      </nav>
+      <button id="mute" class="icon" title="Sound on/off">🔊</button>
+    </header>
+    <main class="layout">
+      <div id="stage"><div id="loading">Polishing the marbles…</div></div>
+      <aside id="panel" class="panel"></aside>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

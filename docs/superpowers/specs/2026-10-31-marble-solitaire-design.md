@@ -42,7 +42,8 @@ coach that knows the optimal result from every position.
    everyone gets the review afterwards.
 6. **3D presentation** — round walnut board with an outer groove, real dimpled holes,
    procedurally textured stone marbles (jade, rose quartz, carnelian, serpentine, blue
-   calcite, honey jasper…), soft shadows and reflections, a plaid tablecloth. Jumps arc;
+   calcite, honey jasper…), soft shadows and reflections, on a plain dark surface (no
+   tablecloth). Jumps arc;
    captured marbles roll into the groove. Synthesised stone-on-wood click sounds. Orbit
    and zoom camera (tuning borrowed from Pylos-Engine). Works on phones.
 
