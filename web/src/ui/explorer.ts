@@ -76,8 +76,7 @@ export class ExplorerScreen implements Screen {
       h("div.card-head", {}, h("h2", {}, `Perfect game from ${label(cell)}`), h("button.ghost.small", { onclick: () => this.overview() }, "All holes")),
       h("p", {}, `Best possible: ${plural(sol.best, "marble")}. ${stats.reachable.toLocaleString()} distinct positions can arise from this start; this line is one of the optimal ones.`),
       player.el,
-      h("p.muted", {}, "Drag to orbit the board. Use the arrows to step through the moves."),
+      h("p.muted", {}, "Drag empty space to orbit the board. Arrow keys step, space plays and pauses."),
     ));
-    void player.play();
   }
 }

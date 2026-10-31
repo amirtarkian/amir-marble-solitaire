@@ -137,7 +137,7 @@ export class PlayScreen implements Screen {
       marbles: marbles.firstChild as HTMLElement,
       moves: moves.firstChild as HTMLElement,
       time: time.firstChild as HTMLElement,
-      undo: h("button", { title: "Undo (Ctrl/⌘+Z)", onclick: () => void this.ctl?.undo() }, "↶ Undo"),
+      undo: h("button", { title: "Undo (Ctrl/⌘+Z)", onclick: () => void this.undo() }, "↶ Undo"),
       redo: h("button", { title: "Redo (Shift+Ctrl/⌘+Z)", onclick: () => void this.ctl?.redo() }, "↷ Redo"),
       coach: h("div.coach-body"),
       seg: h("div.seg"),
@@ -166,8 +166,26 @@ export class PlayScreen implements Screen {
     this.els.marbles.textContent = String(g.marbles);
     this.els.moves.textContent = String(g.history.length);
     this.els.time.textContent = formatTime(this.elapsed);
-    (this.els.undo as HTMLButtonElement).disabled = !g.canUndo;
+    // With no moves made, Undo puts the starting marble back so you can pick another hole.
+    this.els.undo.textContent = g.canUndo ? "↶ Undo" : "↶ Change hole";
+    this.els.undo.title = g.canUndo ? "Undo (Ctrl/⌘+Z)" : "Put the starting marble back and choose a different hole";
     (this.els.redo as HTMLButtonElement).disabled = !g.canRedo;
+  }
+
+  private undo(): Promise<void> {
+    return this.ctl?.game.canUndo ? this.ctl.undo() : this.unpick();
+  }
+
+  /** Before the first move: return the starting marble to its hole and choose again. */
+  private async unpick() {
+    const ctl = this.ctl;
+    if (!ctl || ctl.game.canUndo) return;
+    await ctl.settle();
+    ctl.detach();
+    this.ctl = null;
+    this.stopTimer();
+    await this.app.view.restoreMarble(ctl.game.start);
+    this.pick();
   }
 
   private setLevel(level: CoachLevel) {
@@ -305,7 +323,8 @@ export class PlayScreen implements Screen {
     ctl.detach();
     this.stopTimer();
     const finish = ctl.game.marbles - line.length;
-    const player = new LinePlayer(this.app.view, line);
+    const marbles = ctl.game.marbles;
+    const player = new LinePlayer(this.app.view, line, { caption: (k) => `${marbles - k} marbles · move ${k}/${line.length}` });
     this.preview = player;
     const { panel } = this.app;
     clear(panel);
@@ -320,7 +339,6 @@ export class PlayScreen implements Screen {
         h("button", { onclick: () => this.leavePreview(true) }, "Continue from here"),
       ),
     ));
-    void player.play();
   }
 
   private leavePreview(adopt: boolean) {
@@ -393,7 +411,7 @@ export class PlayScreen implements Screen {
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key.toLowerCase() === "z") {
       e.preventDefault();
-      void (e.shiftKey ? this.ctl.redo() : this.ctl.undo());
+      void (e.shiftKey ? this.ctl.redo() : this.undo());
     } else if (!mod && e.key.toLowerCase() === "h" && this.level === "hint") void this.hint();
   }
 }

@@ -42,6 +42,14 @@ published by George Bell, which the solver checks on every run.
   move or its whole line).
 - **Game review:** every move graded optimal or "+k marbles", with "what should I have
   played?" and the best line from any point.
+- **Step through any line:** every best line starts paused with the next move glowing.
+  Play it yourself on the board, step with Back/Next or the arrow keys, or press Play at
+  ½×, 1×, 2× or 4×.
+- **Learn:** seven principles for playing (and teaching) well without memorising lines,
+  each checked against the solver: which holes can finish with one marble, the four
+  holes your last marble can land on, why the 12 corner holes can't be captured, the
+  three-marble purge, and where games are usually lost. Plus the optimal first moves,
+  opening and closing for every start.
 - **Solutions explorer:** a heat map of the best finish from every hole, and an animated
   perfect game for each.
 - **Race rooms:** share a link; everyone plays the same start at the same time with live

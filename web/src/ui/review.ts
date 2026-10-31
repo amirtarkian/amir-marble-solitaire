@@ -191,6 +191,5 @@ export class ReviewScreen {
         h("button.primary", { onclick: () => this.actions.onPlayFrom([...this.moves.slice(0, i), ...player.moves]) }, "Play from this point"),
       ),
     );
-    void player.play();
   }
 }

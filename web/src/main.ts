@@ -4,7 +4,9 @@ import { Coach } from "./coach/client";
 import { loadSolutions } from "./data/solutions";
 import { sounds } from "./render/audio";
 import { BoardView } from "./render/scene";
+import { parseLabel } from "./board/geometry";
 import { ExplorerScreen } from "./ui/explorer";
+import { LearnScreen } from "./ui/learn";
 import { PlayScreen } from "./ui/play";
 import { RaceScreen } from "./ui/race";
 
@@ -22,7 +24,12 @@ async function boot() {
     const [, name = "play", arg] = location.hash.split("/");
     screen?.unmount();
     document.querySelectorAll<HTMLAnchorElement>("nav a").forEach((a) => a.classList.toggle("on", a.dataset.route === name));
-    screen = name === "solutions" ? new ExplorerScreen(app) : name === "race" ? new RaceScreen(app, arg) : new PlayScreen(app);
+    const start = name === "play" && arg ? parseLabel(arg) : null;
+    screen =
+      name === "solutions" ? new ExplorerScreen(app)
+      : name === "learn" ? new LearnScreen(app)
+      : name === "race" ? new RaceScreen(app, arg)
+      : new PlayScreen(app, start === null ? undefined : { start, moves: [] });
     panel.scrollTop = 0;
   };
   window.addEventListener("hashchange", route);

@@ -215,8 +215,6 @@ input.text:focus { outline: 2px solid rgba(242, 193, 78, 0.5); outline-offset: 1
 
 /* ── Playback ────────────────────────────────────────────── */
 
-.player { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.player .counter { margin-left: auto; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 
 /* ── Review ──────────────────────────────────────────────── */
 
@@ -310,3 +308,42 @@ svg.mini .mini-hole { fill: #2b180d; }
   transition: opacity 0.4s;
 }
 .toast.out { opacity: 0; }
+
+/* ── Line player ─────────────────────────────────────────── */
+
+.player { display: flex; flex-direction: column; gap: 10px; }
+.player-controls { display: grid; grid-template-columns: auto 1fr 1.3fr 1fr auto; gap: 6px; }
+.player-controls button { padding: 8px 6px; }
+.player-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.player-meta .counter { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.speed-wrap { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.seg.speed { grid-template-columns: repeat(4, 42px); }
+.seg.speed button { padding: 4px 0; font-size: 13px; }
+.player-next { font-size: 14px; color: #b6f5cf; background: rgba(95, 255, 168, 0.08); border-radius: 10px; padding: 8px 12px; }
+
+/* ── Learn ───────────────────────────────────────────────── */
+
+.tips { padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.tips li::marker { color: var(--gold); }
+.principle h2 { display: flex; align-items: baseline; gap: 10px; font-size: 18px; }
+.principle .num {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(242, 193, 78, 0.16);
+  color: var(--gold);
+  font: 600 14px var(--sans);
+}
+.principle p { font-size: 14px; }
+.principle details { font-size: 14px; color: var(--muted); }
+.principle summary { cursor: pointer; color: var(--text); }
+.principle details p { margin-top: 6px; color: var(--muted); }
+.demo-note:empty, .demo-slot:empty { display: none; }
+.demo-note { font-size: 14px; color: var(--gold); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-btn { padding: 5px 10px; font-size: 13px; }
+.chip-btn.on { border-color: var(--gold); background: rgba(242, 193, 78, 0.12); }
+.opening-body { display: flex; flex-direction: column; gap: 10px; font-size: 14px; }
