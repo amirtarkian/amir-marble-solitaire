@@ -8,36 +8,19 @@ use crate::board::{apply, has_moves, moves, Move, Pos};
 use crate::class::lower_bound;
 use crate::opening::OpeningTable;
 use crate::symmetry::canon;
-use std::collections::HashMap;
-use std::hash::{BuildHasherDefault, Hasher};
 
 pub const UNLIMITED: u64 = u64::MAX;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OutOfBudget;
 
-/// splitmix64 finaliser: positions differ mostly in high bits, so mix everything.
-#[derive(Default)]
-struct Mix(u64);
-
-impl Hasher for Mix {
-    fn write(&mut self, bytes: &[u8]) {
-        for &b in bytes {
-            self.write_u64(b as u64);
-        }
-    }
-
-    #[inline]
-    fn write_u64(&mut self, x: u64) {
-        let mut z = x ^ self.0;
-        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-        self.0 = z ^ (z >> 31);
-    }
-
-    fn finish(&self) -> u64 {
-        self.0
-    }
+#[inline]
+fn mix(x: u64) -> u64 {
+    // splitmix64 finaliser: positions differ mostly in high bits, so mix everything.
+    let mut z = x;
+    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    z ^ (z >> 31)
 }
 
 #[derive(Clone, Copy)]
@@ -46,12 +29,65 @@ struct Bounds {
     ub: u8,
 }
 
+/// Fixed-size, 4-way set-associative table. Each slot packs `key << 12 | lb << 6 | ub`
+/// into one u64 (0 = empty). When a bucket is full, the entry with the fewest marbles is
+/// evicted: it is the cheapest to recompute.
+struct Table {
+    slots: Vec<u64>,
+    mask: usize,
+    len: usize,
+}
+
+impl Table {
+    fn new(log2_slots: u32) -> Table {
+        let n = 1usize << log2_slots.max(2);
+        Table { slots: vec![0; n], mask: n - 1, len: 0 }
+    }
+
+    #[inline]
+    fn bucket(&self, key: Pos) -> usize {
+        (mix(key) as usize) & self.mask & !3
+    }
+
+    #[inline]
+    fn get(&self, key: Pos) -> Option<Bounds> {
+        let b = self.bucket(key);
+        self.slots[b..b + 4]
+            .iter()
+            .find(|&&s| s >> 12 == key && s != 0)
+            .map(|&s| Bounds { lb: (s >> 6 & 63) as u8, ub: (s & 63) as u8 })
+    }
+
+    fn put(&mut self, key: Pos, lb: u8, ub: u8) {
+        let b = self.bucket(key);
+        let pack = |lb: u8, ub: u8| key << 12 | (lb.min(63) as u64) << 6 | ub.min(63) as u64;
+        let bucket = &mut self.slots[b..b + 4];
+        if let Some(s) = bucket.iter_mut().find(|s| **s >> 12 == key && **s != 0) {
+            let (old_lb, old_ub) = ((*s >> 6 & 63) as u8, (*s & 63) as u8);
+            *s = pack(old_lb.max(lb), old_ub.min(ub));
+            return;
+        }
+        let victim = match bucket.iter().position(|&s| s == 0) {
+            Some(i) => {
+                self.len += 1;
+                i
+            }
+            None => (0..4).min_by_key(|&i| (bucket[i] >> 12).count_ones()).unwrap(),
+        };
+        bucket[victim] = pack(lb, ub);
+    }
+
+    fn clear(&mut self) {
+        self.slots.fill(0);
+        self.len = 0;
+    }
+}
+
 pub struct Solver {
-    tt: HashMap<Pos, Bounds, BuildHasherDefault<Mix>>,
+    tt: Table,
     opening: Option<OpeningTable>,
     nodes: u64,
     limit: u64,
-    max_entries: usize,
 }
 
 impl Default for Solver {
@@ -61,17 +97,18 @@ impl Default for Solver {
 }
 
 impl Solver {
+    /// A solver with a 2^24-slot (128 MB) transposition table.
     pub fn new() -> Self {
-        Solver { tt: HashMap::default(), opening: None, nodes: 0, limit: UNLIMITED, max_entries: 20_000_000 }
+        Self::with_table_bits(24)
+    }
+
+    /// A solver whose transposition table has `2^bits` slots of 8 bytes each.
+    pub fn with_table_bits(bits: u32) -> Self {
+        Solver { tt: Table::new(bits), opening: None, nodes: 0, limit: UNLIMITED }
     }
 
     pub fn set_opening(&mut self, table: OpeningTable) {
         self.opening = Some(table);
-    }
-
-    /// Cap on transposition-table entries; the table is cleared when it fills up.
-    pub fn set_max_entries(&mut self, n: usize) {
-        self.max_entries = n;
     }
 
     pub fn clear(&mut self) {
@@ -83,8 +120,9 @@ impl Solver {
         self.nodes
     }
 
+    /// Occupied transposition-table slots.
     pub fn tt_len(&self) -> usize {
-        self.tt.len()
+        self.tt.len
     }
 
     fn start_budget(&mut self, budget: u64) {
@@ -97,7 +135,7 @@ impl Solver {
         }
         let n = p.count_ones() as u8;
         let mut b = Bounds { lb: lower_bound(p), ub: n };
-        if let Some(e) = self.tt.get(&key) {
+        if let Some(e) = self.tt.get(key) {
             b.lb = b.lb.max(e.lb);
             b.ub = b.ub.min(e.ub);
         }
@@ -105,12 +143,7 @@ impl Solver {
     }
 
     fn store(&mut self, key: Pos, lb: u8, ub: u8) {
-        if self.tt.len() >= self.max_entries {
-            self.tt.clear();
-        }
-        let e = self.tt.entry(key).or_insert(Bounds { lb: 0, ub: u8::MAX });
-        e.lb = e.lb.max(lb);
-        e.ub = e.ub.min(ub);
+        self.tt.put(key, lb, ub);
     }
 
     fn reach(&mut self, p: Pos, t: u8) -> Result<bool, OutOfBudget> {
