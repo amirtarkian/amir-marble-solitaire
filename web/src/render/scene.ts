@@ -23,6 +23,14 @@ export interface BoardEvents {
   onHoleClick?: (cell: Cell) => void;
 }
 
+/** An extra arrow drawn over the board, e.g. every legal move in the opening explorer. */
+export interface BoardArrow {
+  move: Move;
+  color: string;
+  /** Thin and faint when false (e.g. moves that lose marbles). */
+  strong?: boolean;
+}
+
 export interface HeatCell {
   cell: Cell;
   color: string;
@@ -69,7 +77,8 @@ export class BoardView {
   private hovered: Cell | null = null;
   private hint: Move | null = null;
   private arrow = new THREE.Group();
-  private arrowMat = new THREE.MeshBasicMaterial({ color: "#3dff9a", transparent: true, opacity: 0.95, depthTest: false });
+  private arrows: BoardArrow[] = [];
+  private arrowMats = new Map<string, THREE.MeshBasicMaterial>();
   private press: { cell: Cell | null; x: number; y: number; dragging: boolean; id: number } | null = null;
   private dragTarget: Cell | null = null;
   private lastTick = performance.now();
@@ -364,34 +373,50 @@ export class BoardView {
   /** Show (or clear) a suggested move: an arrow over the board that the player follows. */
   setHint(m: Move | null) {
     this.hint = m;
-    this.buildArrow(m);
+    this.buildArrows();
     this.refreshTargets();
   }
 
-  /** An arc from the jumping marble, over the one it captures, down into the target hole. */
-  private buildArrow(m: Move | null) {
+  /** Draw extra arrows (on top of any hint); an empty list clears them. */
+  setArrows(arrows: BoardArrow[]) {
+    this.arrows = arrows;
+    this.buildArrows();
+  }
+
+  private arrowMat(color: string): THREE.MeshBasicMaterial {
+    let m = this.arrowMats.get(color);
+    if (!m) {
+      m = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, depthTest: false });
+      this.arrowMats.set(color, m);
+    }
+    return m;
+  }
+
+  private buildArrows() {
     for (const child of [...this.arrow.children]) {
       this.arrow.remove(child);
       (child as THREE.Mesh).geometry.dispose();
     }
-    this.arrow.visible = !!m;
-    if (!m) return;
+    const all = [...this.arrows, ...(this.hint ? [{ move: this.hint, color: "#3dff9a", strong: true }] : [])];
+    this.arrow.visible = all.length > 0;
+    for (const a of all) this.addArrow(a.move, this.arrowMat(a.color), a.strong ?? true);
+  }
+
+  /** An arc from the jumping marble, over the one it captures, down into the target hole. */
+  private addArrow(m: Move, mat: THREE.MeshBasicMaterial, strong: boolean) {
     const curve = new THREE.QuadraticBezierCurve3(
       holeVec(m.from, REST_Y + 0.45),
-      holeVec(m.over, REST_Y + 1.35),
+      holeVec(m.over, REST_Y + (strong ? 1.35 : 1.1)),
       holeVec(m.to, REST_Y + 0.42),
     );
     const headStart = 0.76;
-    const shaft = new THREE.Mesh(
-      new THREE.TubeGeometry(new CurvePart(curve, 0, headStart), 32, 0.085, 12, false),
-      this.arrowMat,
-    );
+    const shaft = new THREE.Mesh(new THREE.TubeGeometry(new CurvePart(curve, 0, headStart), 32, strong ? 0.085 : 0.045, 12, false), mat);
     const tip = curve.getPoint(1), base = curve.getPoint(headStart);
-    const head = new THREE.Mesh(new THREE.ConeGeometry(0.22, tip.distanceTo(base), 20), this.arrowMat);
+    const head = new THREE.Mesh(new THREE.ConeGeometry(strong ? 0.22 : 0.14, tip.distanceTo(base), 20), mat);
     head.position.copy(base).add(tip).multiplyScalar(0.5);
     head.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tip.clone().sub(base).normalize());
     for (const mesh of [shaft, head]) {
-      mesh.renderOrder = 10;
+      mesh.renderOrder = strong ? 11 : 10;
       this.arrow.add(mesh);
     }
   }
@@ -469,7 +494,7 @@ export class BoardView {
     if (this.hovered !== null && this.hovered !== this.selected) glow(this.hovered, SELECT_GLOW, 0.3);
     glow(this.selected, SELECT_GLOW, 0.75 + 0.35 * pulse);
     this.targetRings[5].material.opacity = 0.75 + 0.25 * pulse;
-    this.arrowMat.opacity = 0.8 + 0.2 * pulse;
+    for (const m of this.arrowMats.values()) m.opacity = 0.75 + 0.2 * pulse;
     this.ghosts.forEach((g, i) => {
       if (!g.visible) return;
       const near = this.press?.dragging && this.dragTarget !== null && g.position.distanceTo(holeVec(this.dragTarget)) < 0.01;

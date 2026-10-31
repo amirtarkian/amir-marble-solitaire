@@ -9,6 +9,9 @@ export interface HoleSolution {
   orbit: string;
   best: number;
   line: [Cell, Cell][];
+  /** The easiest perfect line to replicate, and (good, legal) moves at each of its steps. */
+  easy_line?: [Cell, Cell][];
+  easy_steps?: [number, number][];
 }
 
 export interface LevelStat {
@@ -22,6 +25,8 @@ export interface OrbitStats {
   rep: string;
   best: number;
   reachable: number;
+  /** Chance an average player (skill 0.5, about 1400) plays this start perfectly. */
+  p_perfect?: number;
   levels: LevelStat[];
 }
 
@@ -42,6 +47,7 @@ export function loadSolutions(): Promise<Solutions | null> {
 
 export const holeSolution = (s: Solutions, cell: Cell) => s.holes.find((h) => h.cell === cell);
 export const lineMoves = (h: HoleSolution): Move[] => h.line.map(([f, t]) => makeMove(f, t));
+export const easyMoves = (h: HoleSolution): Move[] => (h.easy_line ?? h.line).map(([f, t]) => makeMove(f, t));
 export const orbitStats = (s: Solutions, h: HoleSolution) => s.orbits.find((o) => o.rep === h.orbit)!;
 
 /** Heat-map colour for a best finish of n marbles. */

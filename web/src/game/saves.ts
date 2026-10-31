@@ -14,6 +14,8 @@ export interface SavedGame {
   /** Positions (by move number) where the coach showed a move or a line. */
   help?: number[];
   takebacks?: number;
+  /** A practice game started part-way through a solver line: not rated. */
+  practice?: { from: number };
   /** The review's solver analysis, cached once complete (valid for `moves.length` moves). */
   analysis?: Analysis & { moves: number };
   /** Set once the finished game has counted toward your rating. */

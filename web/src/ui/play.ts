@@ -44,15 +44,18 @@ export class PlayScreen implements Screen {
   /** Move numbers at which the coach showed a move or a line, and takebacks so far. */
   private help = new Set<number>();
   private takebacks = 0;
+  /** Set for practice games: the first `from` moves were the solver's. */
+  private practice: { from: number } | null = null;
   private onPageHide = () => this.persist();
 
-  constructor(private app: App, resume?: { start: Cell; moves: Move[] }) {
+  constructor(private app: App, resume?: { start: Cell; moves: Move[]; practiceFrom?: number }) {
     window.addEventListener("keydown", this.keyHandler);
     window.addEventListener("pagehide", this.onPageHide);
     const active = this.saves.activeId();
     const saved = active ? this.saves.get(active) : undefined;
     if (resume) {
-      this.begin(resume.start, resume.moves);
+      const from = resume.practiceFrom;
+      this.begin(resume.start, resume.moves, from ? { practice: { from }, help: [...Array(from).keys()] } : {});
       // A #/play/<hole> link starts one game; reloading should resume it, not start another.
       history.replaceState(null, "", "#/play");
     } else if (saved) this.resumeSaved(saved);
@@ -123,7 +126,7 @@ export class PlayScreen implements Screen {
     const sameMoves = !!prev && JSON.stringify(prev.moves) === JSON.stringify(moves);
     this.saves.put({
       id: this.saveId, start: g.start, moves, elapsed: this.elapsed, updated: Date.now(),
-      help: [...this.help], takebacks: this.takebacks,
+      help: [...this.help], takebacks: this.takebacks, practice: this.practice ?? undefined,
       analysis: sameMoves ? prev.analysis : undefined,
       rated: prev?.rated,
     });
@@ -138,14 +141,14 @@ export class PlayScreen implements Screen {
 
   /** Help and takebacks carried into a branch that keeps the first `moves` moves. */
   private carried(moves: number) {
-    return { help: [...this.help].filter((i) => i < moves), takebacks: this.takebacks };
+    return { help: [...this.help].filter((i) => i < moves), takebacks: this.takebacks, practice: this.practice };
   }
 
   private resumeSaved(saved: SavedGame) {
     this.persist();
     try {
       this.begin(saved.start, saved.moves.map(([f, t]) => makeMove(f, t)), {
-        id: saved.id, elapsed: saved.elapsed, help: saved.help, takebacks: saved.takebacks,
+        id: saved.id, elapsed: saved.elapsed, help: saved.help, takebacks: saved.takebacks, practice: saved.practice,
       });
     } catch {
       this.saves.remove(saved.id); // unreadable save
@@ -203,7 +206,10 @@ export class PlayScreen implements Screen {
   // ── Playing ──────────────────────────────────────────────────────────
 
   /** Start or resume a game; pass the saved id to keep writing to the same save. */
-  private begin(start: Cell, moves: Move[], opts: { id?: string | null; elapsed?: number; help?: number[]; takebacks?: number } = {}) {
+  private begin(
+    start: Cell, moves: Move[],
+    opts: { id?: string | null; elapsed?: number; help?: number[]; takebacks?: number; practice?: { from: number } | null } = {},
+  ) {
     this.preview?.stop();
     this.preview = null;
     this.app.view.setHeat(null);
@@ -216,6 +222,7 @@ export class PlayScreen implements Screen {
     this.elapsed = opts.elapsed ?? 0;
     this.help = new Set((opts.help ?? []).filter((i) => i <= moves.length));
     this.takebacks = opts.takebacks ?? 0;
+    this.practice = opts.practice ?? null;
     this.persist();
     this.startTimer();
     this.renderPlay();
@@ -263,7 +270,9 @@ export class PlayScreen implements Screen {
     panel.append(
       h("section.card",
         {},
-        h("div.card-head", {}, h("h2", {}, `Started at ${label(g.start)}`), best !== null ? h("span.pill", {}, `best possible: ${best}`) : null),
+        h("div.card-head", {},
+          h("h2", {}, this.practice ? `Practice from move ${this.practice.from + 1}` : `Started at ${label(g.start)}`),
+          this.practice ? h("span.pill", {}, "unrated") : best !== null ? h("span.pill", {}, `best possible: ${best}`) : null),
         h("div.stats", {}, marbles, moves, time),
         h("div.row", {}, this.els.undo, this.els.redo, h("span.spacer"), h("button.ghost", { onclick: () => this.pick(), title: "This game stays saved below" }, "New game")),
       ),
@@ -559,6 +568,7 @@ export class PlayScreen implements Screen {
     }, {
       help: new Set(this.help),
       takebacks: this.takebacks,
+      fromMove: this.practice?.from ?? 0,
       analysis: saved?.analysis?.moves === moves.length ? saved.analysis : undefined,
       onAnalysis: (a) => {
         const cur = id ? this.saves.get(id) : undefined;
@@ -566,7 +576,7 @@ export class PlayScreen implements Screen {
       },
       rate: (perf) => {
         const cur = id ? this.saves.get(id) : undefined;
-        if (!cur || !g.isOver) return null;
+        if (!cur || !g.isOver || cur.practice) return null;
         if (cur.rated) return { ...cur.rated, fresh: false };
         const rated = { perf, ...applyPerformance(perf) };
         this.saves.put({ ...cur, rated });

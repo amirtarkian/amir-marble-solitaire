@@ -46,8 +46,22 @@ struct Summary {
     levels: Vec<LevelStat>,
     /// One optimal line for every hole in this symmetry class, in real orientation.
     lines: BTreeMap<String, Vec<[u8; 2]>>,
+    /// The easiest optimal line to replicate: at every step, the optimal move whose
+    /// position gives an average player the best chance to stay perfect.
+    #[serde(default)]
+    easy_lines: BTreeMap<String, Vec<[u8; 2]>>,
+    /// Along each easy line: (moves that keep the best finish, legal moves) per step.
+    #[serde(default)]
+    easy_steps: BTreeMap<String, Vec<[u8; 2]>>,
+    /// Chance an average player (skill 0.5) plays this start perfectly.
+    #[serde(default)]
+    p_perfect: f64,
     seconds: f64,
 }
+
+/// The "average player" behind `p_perfect`: picks an optimal move with this probability,
+/// otherwise guesses uniformly among all legal moves. Matches a 1400 rating in the app.
+const AVERAGE_SKILL: f32 = 0.5;
 
 // ── Disk-backed levels ──────────────────────────────────────────────────
 //
@@ -65,6 +79,22 @@ fn keys_path(dir: &Path, k: usize) -> PathBuf {
 
 fn vals_path(dir: &Path, k: usize) -> PathBuf {
     dir.join(format!("L{k:02}.vals"))
+}
+
+fn track_path(dir: &Path, k: usize) -> PathBuf {
+    dir.join(format!("L{k:02}.track"))
+}
+
+fn write_f32s(path: &Path, xs: &[f32]) {
+    let mut w = BufWriter::new(File::create(path).unwrap());
+    for x in xs {
+        w.write_all(&x.to_le_bytes()).unwrap();
+    }
+    w.flush().unwrap();
+}
+
+fn read_f32s(path: &Path) -> Vec<f32> {
+    fs::read(path).unwrap().chunks_exact(4).map(|c| f32::from_le_bytes(c.try_into().unwrap())).collect()
 }
 
 fn as_bytes(v: &[u64]) -> &[u8] {
@@ -261,31 +291,55 @@ fn solve(rep: u8, keep_levels: bool) {
     let low_keys = read_all_keys(&keys_path(&dir, lowest));
     let low_vals = vec![best; low_keys.len()];
     fs::write(vals_path(&dir, lowest), &low_vals).unwrap();
+    write_f32s(&track_path(&dir, lowest), &vec![1.0; low_keys.len()]);
     tally(lowest, &low_keys, &low_vals, &mut stats);
     take_samples(lowest, 0, &low_keys, &low_vals, &mut samples);
     drop((low_keys, low_vals));
     for k in lowest + 1..=36 {
         let below = read_all_keys(&keys_path(&dir, k - 1));
         let below_vals = fs::read(vals_path(&dir, k - 1)).unwrap();
+        let below_track = read_f32s(&track_path(&dir, k - 1));
         let mut w = BufWriter::new(File::create(vals_path(&dir, k)).unwrap());
+        let mut wt = BufWriter::new(File::create(track_path(&dir, k)).unwrap());
         for start in (0..counts[k]).step_by(CHUNK) {
             let keys = read_keys(&keys_path(&dir, k), start, CHUNK.min(counts[k] - start));
-            let vals: Vec<u8> = keys
+            // Value, and the chance an average player stays perfect from here.
+            let scored: Vec<(u8, f32)> = keys
                 .par_iter()
                 .map(|&p| {
                     let mut v = k as u8;
+                    // At most one jump per (marble, direction): 4 × 37 bounds it comfortably.
+                    let mut kids = [(0usize, 0u8); 148];
+                    let mut n = 0;
                     for m in moves(p) {
                         let i = below.binary_search(&canon(apply(p, m))).expect("children are reachable");
                         v = v.min(below_vals[i]);
+                        kids[n] = (i, below_vals[i]);
+                        n += 1;
                     }
-                    v
+                    if v != best || n == 0 {
+                        return (v, if v == best { 1.0 } else { 0.0 });
+                    }
+                    let (mut sum, mut good) = (0f32, 0f32);
+                    for &(i, cv) in &kids[..n] {
+                        if cv == best {
+                            sum += below_track[i];
+                            good += 1.0;
+                        }
+                    }
+                    (v, AVERAGE_SKILL * sum / good + (1.0 - AVERAGE_SKILL) * sum / n as f32)
                 })
                 .collect();
+            let vals: Vec<u8> = scored.iter().map(|x| x.0).collect();
+            for (_, t) in &scored {
+                wt.write_all(&t.to_le_bytes()).unwrap();
+            }
             w.write_all(&vals).unwrap();
             tally(k, &keys, &vals, &mut stats);
             take_samples(k, start, &keys, &vals, &mut samples);
         }
         w.flush().unwrap();
+        wt.flush().unwrap();
         println!("  backward {k:2} marbles done ({:.0}s)", t0.elapsed().as_secs_f64());
     }
     let start_val = fs::read(vals_path(&dir, 36)).unwrap()[0];
@@ -309,9 +363,46 @@ fn solve(rep: u8, keep_levels: bool) {
     }
     let lines: BTreeMap<String, Vec<[u8; 2]>> = holes.iter().zip(lines).map(|(&h, l)| (label(h), l)).collect();
 
+    // The easiest optimal line: always take the optimal move with the best chance of
+    // staying perfect afterwards.
+    let p_perfect = read_f32s(&track_path(&dir, 36))[0] as f64;
+    let mut cur: Vec<Pos> = holes.iter().map(|&h| start(h)).collect();
+    let mut easy: Vec<Vec<[u8; 2]>> = vec![Vec::new(); holes.len()];
+    let mut steps: Vec<Vec<[u8; 2]>> = vec![Vec::new(); holes.len()];
+    for k in (lowest + 1..=36).rev() {
+        let below = read_all_keys(&keys_path(&dir, k - 1));
+        let below_vals = fs::read(vals_path(&dir, k - 1)).unwrap();
+        let below_track = read_f32s(&track_path(&dir, k - 1));
+        for h in 0..holes.len() {
+            let p = cur[h];
+            let mut best_move = None;
+            let (mut good, mut total) = (0u8, 0u8);
+            for m in moves(p) {
+                let i = below.binary_search(&canon(apply(p, m))).unwrap();
+                total += 1;
+                if below_vals[i] == best {
+                    good += 1;
+                    if best_move.is_none_or(|(_, t)| below_track[i] > t) {
+                        best_move = Some((m, below_track[i]));
+                    }
+                }
+            }
+            let (m, _) = best_move.expect("an optimal child exists");
+            easy[h].push([m.from, m.to]);
+            steps[h].push([good, total]);
+            cur[h] = apply(p, m);
+        }
+    }
+    println!("  average player plays this start perfectly {:.4}% of the time", p_perfect * 100.0);
+    let easy_lines: BTreeMap<String, Vec<[u8; 2]>> = holes.iter().zip(easy).map(|(&h, l)| (label(h), l)).collect();
+    let easy_steps: BTreeMap<String, Vec<[u8; 2]>> = holes.iter().zip(steps).map(|(&h, l)| (label(h), l)).collect();
+
     write_records(&format!("{CACHE}/{name}.hard.bin"), hard.into_iter());
     write_records(&format!("{CACHE}/{name}.sample.bin"), samples.into_iter());
-    let summary = Summary { rep: name.clone(), best, reachable, levels: stats, lines, seconds: t0.elapsed().as_secs_f64() };
+    let summary = Summary {
+        rep: name.clone(), best, reachable, levels: stats, lines, easy_lines, easy_steps, p_perfect,
+        seconds: t0.elapsed().as_secs_f64(),
+    };
     fs::write(format!("{CACHE}/{name}.json"), serde_json::to_string_pretty(&summary).unwrap()).unwrap();
     if !keep_levels {
         fs::remove_dir_all(&dir).unwrap();
@@ -373,6 +464,8 @@ struct HoleOut {
     orbit: String,
     best: u8,
     line: Vec<[u8; 2]>,
+    easy_line: Vec<[u8; 2]>,
+    easy_steps: Vec<[u8; 2]>,
 }
 
 #[derive(Serialize)]
@@ -380,6 +473,7 @@ struct OrbitOut {
     rep: String,
     best: u8,
     reachable: u64,
+    p_perfect: f64,
     levels: Vec<LevelStat>,
 }
 
@@ -401,9 +495,13 @@ fn build_data(depth: u32) {
         let summary: Summary = serde_json::from_str(&fs::read_to_string(format!("{CACHE}/{name}.json")).unwrap()).unwrap();
         entries.extend(read_records(&format!("{CACHE}/{name}.hard.bin")).into_iter().filter(|(p, _)| p.count_ones() >= min_marbles));
         for (l, line) in &summary.lines {
-            holes.push(HoleOut { label: l.clone(), cell: parse_label(l).unwrap(), orbit: name.clone(), best: summary.best, line: line.clone() });
+            holes.push(HoleOut {
+                label: l.clone(), cell: parse_label(l).unwrap(), orbit: name.clone(), best: summary.best, line: line.clone(),
+                easy_line: summary.easy_lines.get(l).cloned().unwrap_or_else(|| line.clone()),
+                easy_steps: summary.easy_steps.get(l).cloned().unwrap_or_default(),
+            });
         }
-        orbits.push(OrbitOut { rep: name, best: summary.best, reachable: summary.reachable, levels: summary.levels });
+        orbits.push(OrbitOut { rep: name, best: summary.best, reachable: summary.reachable, p_perfect: summary.p_perfect, levels: summary.levels });
     }
     holes.sort_by_key(|h| h.cell);
     let table = OpeningTable::new(min_marbles as u8, entries);
@@ -416,11 +514,11 @@ fn build_data(depth: u32) {
     verify_lines(&out.holes);
 }
 
-/// Replays every published line, and re-derives each value with the live solver.
+/// Replays every published line (perfect and easiest) to its best finish.
 fn verify_lines(holes: &[HoleOut]) {
-    for h in holes {
+    for (h, line) in holes.iter().flat_map(|h| [(h, &h.line), (h, &h.easy_line)]) {
         let mut p = start(h.cell);
-        for &[from, to] in &h.line {
+        for &[from, to] in line {
             let m = Move::new(from, to);
             assert!(moves(p).any(|x| x == m), "illegal move in line for {}", h.label);
             p = apply(p, m);

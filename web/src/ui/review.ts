@@ -23,6 +23,8 @@ export interface ReviewExtras {
   /** Move numbers at which the coach showed a move or a line. */
   help?: ReadonlySet<number>;
   takebacks?: number;
+  /** Practice games: moves before this were the solver's and aren't graded as yours. */
+  fromMove?: number;
   /** A finished analysis from an earlier visit. */
   analysis?: Analysis;
   onAnalysis?: (a: Analysis) => void;
@@ -143,7 +145,7 @@ export class ReviewScreen {
     const a = this.analysisData();
     if (fresh) this.extras.onAnalysis?.(a);
     this.graded = gradeMoves(a, this.help);
-    this.skill = estimateSkill(this.graded);
+    this.skill = estimateSkill(this.graded.slice(this.extras.fromMove ?? 0));
     this.chips.forEach((_, k) => this.paintChip(k + 1));
     this.renderSkills();
     this.renderHeader();
@@ -204,7 +206,7 @@ export class ReviewScreen {
               : rated.fresh
                 ? `Rating ${rated.before} → ${rated.after} (${rated.after >= rated.before ? "+" : ""}${rated.after - rated.before})`
                 : `Counted toward your rating (now ${rated.after})`)
-            : h("div.muted", {}, "Not rated (only finished solo games count)"),
+            : h("div.muted", {}, this.extras.fromMove ? `Practice game: not rated (graded from move ${this.extras.fromMove + 1})` : "Not rated (only finished solo games count)"),
         ),
       ),
       h("div.grade-counts",

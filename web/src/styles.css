@@ -432,3 +432,21 @@ svg.odds-chart { width: 100%; height: auto; display: block; cursor: crosshair; t
 .tenets a { color: var(--text); text-decoration: none; }
 .tenets a:hover strong { color: var(--gold); }
 .principle.focus { border-color: rgba(242, 193, 78, 0.6); box-shadow: 0 0 0 1px rgba(242, 193, 78, 0.25); }
+
+/* ── Openings: explorer, chunks, moments ─────────────────── */
+
+h3.sub { margin-top: 6px; color: var(--gold); }
+.explorer { display: flex; flex-direction: column; gap: 8px; }
+.explorer-controls { grid-template-columns: 1fr 1fr 1.4fr; }
+.explorer-status { font-size: 14px; background: rgba(0, 0, 0, 0.2); border-radius: 10px; padding: 8px 12px; }
+.explorer-moves { list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 5px; }
+.explorer-moves button { width: 100%; display: flex; justify-content: space-between; gap: 6px; padding: 5px 8px; font-size: 13px; }
+.explorer-moves button.good { border-color: rgba(61, 255, 154, 0.45); }
+.explorer-moves button.good .verdict { color: #8ff0bd; }
+.explorer-moves button.bad { opacity: 0.75; }
+.explorer-moves button.bad .verdict { color: #ff9a85; }
+.explorer-moves button.solver { outline: 2px solid var(--gold); }
+.chunk { border-left: 2px solid rgba(242, 193, 78, 0.4); padding-left: 10px; display: flex; flex-direction: column; gap: 6px; }
+.moments { list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.howto { background: rgba(242, 193, 78, 0.07); border: 1px solid rgba(242, 193, 78, 0.25); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+.howto ol { padding-left: 18px; margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }

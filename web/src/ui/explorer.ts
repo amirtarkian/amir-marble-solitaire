@@ -2,7 +2,7 @@
 
 import type { App, Screen } from "../app";
 import { type Cell, HOLES, label } from "../board/geometry";
-import { type HoleSolution, heatColor, holeSolution, lineMoves, orbitStats } from "../data/solutions";
+import { type HoleSolution, easyMoves, heatColor, holeSolution, orbitStats } from "../data/solutions";
 import { startBoard } from "../game/state";
 import { clear, h, plural } from "./dom";
 import { LinePlayer } from "./playback";
@@ -66,7 +66,7 @@ export class ExplorerScreen implements Screen {
     this.player?.stop();
     view.setHeat(null);
     view.setBoard(startBoard(cell));
-    const line = lineMoves(sol);
+    const line = easyMoves(sol);
     const stats = orbitStats(solutions!, sol);
     const player = new LinePlayer(view, line, { caption: (k) => `${36 - k} marbles · move ${k}/${line.length}` });
     this.player = player;
@@ -74,7 +74,8 @@ export class ExplorerScreen implements Screen {
     panel.append(h("section.card",
       {},
       h("div.card-head", {}, h("h2", {}, `Perfect game from ${label(cell)}`), h("button.ghost.small", { onclick: () => this.overview() }, "All holes")),
-      h("p", {}, `Best possible: ${plural(sol.best, "marble")}. ${stats.reachable.toLocaleString()} distinct positions can arise from this start; this line is one of the optimal ones.`),
+      h("p", {}, `Best possible: ${plural(sol.best, "marble")}. ${stats.reachable.toLocaleString()} distinct positions can arise from this start. Of the many perfect games, this is the easiest to replicate: at every step it keeps the most room for error.`),
+      h("p.muted", {}, h("a.principle-link", { href: "#/learn" }, "Learn it in chunks, with its key moments, on the Learn tab →")),
       player.el,
       h("p.muted", {}, "Drag empty space to orbit the board. Arrow keys step, space plays and pauses."),
     ));

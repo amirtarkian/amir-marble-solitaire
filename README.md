@@ -61,6 +61,13 @@ published by George Bell, which the solver checks on every run.
 - **Step through any line:** every best line starts paused with the next move glowing.
   Play it yourself on the board, step with Back/Next or the arrow keys, or press Play at
   ½×, 1×, 2× or 4×.
+- **Openings and closings:** for every start family, an opening explorer (every legal
+  move drawn as a green or red arrow), the easiest perfect game to replicate described
+  phase by phase and practised in chunks, the key moments where only one or two moves
+  work, the last 8 moves from each hole in the family, and unrated practice games from
+  any chunk. The solver picks the easiest line by computing, for every position, the
+  chance an average player (skill 0.5, about 1400) stays perfect from there, and always
+  steps to the optimal move that keeps that chance highest.
 - **Learn:** the tenets of the game and seven principles for playing (and teaching) well without memorising lines,
   each checked against the solver: which holes can finish with one marble, the four
   holes your last marble can land on, why the 12 corner holes can't be captured, the

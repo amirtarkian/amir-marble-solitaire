@@ -4,8 +4,9 @@
 import type { App, Screen } from "../app";
 import { finishingHoles, UNJUMPABLE } from "../board/facts";
 import { type Cell, HOLES, isHole, label, parseLabel, rc } from "../board/geometry";
-import { Cancelled } from "../coach/client";
-import { type Solutions, heatColor, holeSolution, lineMoves } from "../data/solutions";
+import { type HoleSolution, type Solutions, easyMoves, heatColor, holeSolution, orbitStats } from "../data/solutions";
+import { describeLine, finishNote } from "../review/line-notes";
+import { OpeningExplorer } from "./opening-explorer";
 import { Game, type Move, makeMove, startBoard } from "../game/state";
 import { clear, h, plural } from "./dom";
 import { LinePlayer } from "./playback";
@@ -68,6 +69,7 @@ const pct = (x: number | null) => (x === null ? "?" : `${Math.round(x * 100)}%`)
 
 export class LearnScreen implements Screen {
   private player: LinePlayer | null = null;
+  private explorer: OpeningExplorer | null = null;
   private slots: HTMLElement[] = [];
   private finishNote = h("p.demo-note");
   private openingBody = h("div.opening-body");
@@ -84,6 +86,8 @@ export class LearnScreen implements Screen {
 
   unmount() {
     this.player?.stop();
+    this.explorer?.stop();
+    this.app.coach?.cancel("explorer");
     this.app.view.setHeat(null);
     this.app.view.events = {};
   }
@@ -93,6 +97,8 @@ export class LearnScreen implements Screen {
   private reset(board: Uint8Array) {
     this.player?.stop();
     this.player = null;
+    this.explorer?.stop();
+    this.explorer = null;
     for (const s of this.slots) clear(s);
     const { view } = this.app;
     view.setHint(null);
@@ -142,15 +148,19 @@ export class LearnScreen implements Screen {
     this.play(slot, line, (k) => steps[k]);
   }
 
-  private showOpening(rep: Cell, part: "opening" | "closing", slot: HTMLElement) {
-    const sol = this.app.solutions;
-    const hole = sol && holeSolution(sol, rep);
-    if (!hole) return;
-    const line = lineMoves(hole);
-    const cut = part === "opening" ? 0 : Math.max(0, line.length - 8);
-    this.reset(Game.replay(rep, line.slice(0, cut)).board);
-    const moves = part === "opening" ? line.slice(0, 8) : line.slice(cut);
-    this.play(slot, moves, (k) => `${36 - cut - k} marbles · ${part} move ${k}/${moves.length}`);
+  /** Step through moves `from`..`to` (1-based, inclusive) of a hole's easiest line. */
+  private showChunk(hole: HoleSolution, from: number, to: number, slot: HTMLElement, label: string) {
+    const line = easyMoves(hole);
+    this.reset(Game.replay(hole.cell, line.slice(0, from - 1)).board);
+    const moves = line.slice(from - 1, to);
+    this.play(slot, moves, (k) => `${36 - (from - 1) - k} marbles · ${label} ${k}/${moves.length}`);
+  }
+
+  private explore(cell: Cell, slot: HTMLElement, path: Move[] = [], highlight?: Move) {
+    this.reset(Game.replay(cell, path).board);
+    this.explorer = new OpeningExplorer(this.app, cell, path);
+    slot.append(this.explorer.el);
+    if (path.length) void this.explorer.goTo(path, highlight);
   }
 
   // ── Panel ────────────────────────────────────────────────────────────
@@ -259,7 +269,7 @@ export class LearnScreen implements Screen {
     const card = h("section.card",
       {},
       h("h2", {}, "Openings and closings"),
-      h("p.muted", {}, "One family per starting hole and its mirror images. Pick one to see the optimal first moves and to step through the solver's opening and closing."),
+      h("p.muted", {}, "One family per starting hole and its mirror images. Pick one to explore its opening move by move, learn its easiest perfect game in chunks, and practise its closings."),
       chips,
       this.openingBody,
     );
@@ -273,47 +283,122 @@ export class LearnScreen implements Screen {
       chips.append(h("button.chip-btn", {
         onclick: (e: Event) => {
           [...chips.children].forEach((c) => c.classList.toggle("on", c === e.currentTarget));
-          void this.selectOpening(cell);
+          this.selectOpening(cell);
         },
       }, h("span.dot", { style: `background:${heatColor(o.best)}` }), ` ${o.rep} · ${o.best}`));
     }
     return card;
   }
 
-  private async selectOpening(cell: Cell) {
+  private selectOpening(cell: Cell) {
     const sol = this.app.solutions!;
     const hole = holeSolution(sol, cell)!;
-    const family = sol.holes.filter((x) => x.orbit === hole.orbit).map((x) => x.label);
-    this.reset(startBoard(cell));
+    const orbit = orbitStats(sol, hole);
+    const family = sol.holes.filter((x) => x.orbit === hole.orbit);
+    const line = easyMoves(hole);
+    const steps = hole.easy_steps ?? [];
     const body = this.openingBody;
     clear(body);
-    const firstMoves = h("p", {}, "Working out the optimal first moves…");
-    const slot = h("div.demo-slot");
-    this.slots.push(slot);
+    this.slots = [];
+    const slot = () => {
+      const s = h("div.demo-slot");
+      this.slots.push(s);
+      return s;
+    };
+
+    // Summary: ceiling, difficulty, target holes.
+    const ends = finishingHoles(cell);
+    const ranked = [...sol.orbits].filter((o) => o.p_perfect !== undefined).sort((a, b) => (b.p_perfect ?? 0) - (a.p_perfect ?? 0));
+    const rank = ranked.findIndex((o) => o.rep === orbit.rep);
     body.append(
-      h("p", {}, h("strong", {}, `${label(cell)}`), ` (also ${family.filter((l) => l !== label(cell)).join(", ")}): best possible ${plural(hole.best, "marble")}.`),
-      firstMoves,
-      h("div.row",
-        {},
-        h("button", { onclick: () => this.showOpening(cell, "opening", slot) }, "Step through the opening"),
-        h("button", { onclick: () => this.showOpening(cell, "closing", slot) }, "Step through the closing"),
-        h("button.primary", { onclick: () => (location.hash = `#/play/${label(cell)}`) }, `Play ${label(cell)}`),
+      h("p", {}, h("strong", {}, label(cell)), ` (also ${family.filter((x) => x.cell !== cell).map((x) => x.label).join(", ")}): best possible ${plural(hole.best, "marble")}.`,
+        ends.length ? ` Your last marble can only land on ${ends.map(label).join(", ")}.` : ""),
+      orbit.p_perfect !== undefined
+        ? h("p.muted", {}, `An average player (about 1400) plays this start perfectly ${fmtChance(orbit.p_perfect)}: the ${rank < 4 ? `${ordinal(rank + 1)} easiest` : `${ordinal(ranked.length - rank)} hardest`} of the 8 starts for reaching its best finish.`)
+        : "",
+      h("div.row", {}, h("button.primary", { onclick: () => (location.hash = `#/play/${label(cell)}`) }, `Play ${label(cell)}`)),
+      h("div.howto", {},
+        h("strong", {}, "How to learn this start so you can play it without the computer"),
+        h("ol", {},
+          h("li", {}, "Know your ceiling and, for a one-marble start, your four finishing holes (above)."),
+          h("li", {}, "Learn the easiest perfect game below in three chunks: watch a chunk, then press \"Play it yourself\" and repeat until the Warn coach stays quiet."),
+          h("li", {}, "Memorise only the key moments. Everywhere else several moves work, so follow the plan in words rather than exact moves."),
+          h("li", {}, "Play the whole start with the coach Off, then use the review to see which chunk still slips."),
+        ),
       ),
-      slot,
     );
-    const coach = this.app.coach;
-    if (!coach) {
-      firstMoves.textContent = "";
-      return;
+
+    // 1. Opening explorer.
+    const exploreSlot = slot();
+    body.append(
+      h("h3.sub", {}, "Explore the opening"),
+      h("p", {}, "Every legal move is drawn on the board: green arrows keep your best finish, thin red ones throw marbles away. Try any move, on the board or from the list, and step back to compare."),
+      h("div.row", {}, h("button", { onclick: () => this.explore(cell, exploreSlot) }, "Open the explorer")),
+      exploreSlot,
+    );
+
+    // 2. The easiest perfect game, in words and in chunks.
+    const free = steps.filter(([g, t]) => g === t).length;
+    const only = steps.filter(([g, t]) => g === 1 && t > 1).length;
+    const notes = describeLine(cell, line);
+    const chunkSlot = slot();
+    const chunks = notes.phases.map((p) => h("div.chunk", {},
+      h("div.chunk-head", {}, h("strong", {}, `${p.name} (moves ${p.from}–${p.to})`)),
+      h("p", {}, p.text),
+      h("div.row", {},
+        h("button", { onclick: () => this.showChunk(hole, p.from, p.to, chunkSlot, p.name.toLowerCase()) }, "Watch it"),
+        h("button", { onclick: () => (location.hash = `#/practice/${label(cell)}/${p.from - 1}`), title: "An unrated game starting where this chunk starts" }, "Play it yourself"))));
+    body.append(
+      h("h3.sub", {}, "The easiest perfect game"),
+      h("p", {}, steps.length
+        ? `There are huge numbers of perfect games. This one leaves the most room for error at every step: ${free} of its ${line.length} moves are free choices (every legal move keeps the best finish), and only ${plural(only, "moment")} ${only === 1 ? "has" : "have"} a single right move. Learn those moments and the plan below, and the rest takes care of itself.`
+        : "One of the solver's perfect games, described phase by phase."),
+      ...chunks,
+      h("p", {}, finishNote(cell, line)),
+      chunkSlot,
+    );
+
+    // 3. Key moments: where few moves keep the best finish.
+    if (steps.length) {
+      const moments = steps
+        .map(([g, t], i) => ({ g, t, i }))
+        .filter((m) => m.t > 1 && (m.g === 1 || (m.g <= 2 && m.t >= 5)))
+        .slice(0, 10);
+      const momentSlot = slot();
+      body.append(
+        h("h3.sub", {}, "Key moments to remember"),
+        moments.length
+          ? h("ul.moments", {}, ...moments.map((m) => h("li", {},
+            h("button.small", { onclick: () => this.explore(cell, momentSlot, line.slice(0, m.i), line[m.i]) }, "Show"),
+            ` Move ${m.i + 1}: ${label(line[m.i].from)} → ${label(line[m.i].to)}. `,
+            h("span.muted", {}, m.g === 1 ? `The only one of ${m.t} legal moves that keeps ${hole.best}.` : `Just ${m.g} of ${m.t} moves keep ${hole.best}.`))))
+          : h("p.muted", {}, "No step in this line is down to one or two good moves."),
+        momentSlot,
+      );
     }
-    try {
-      const mv = await coach.moveValues(new Game(cell).bits(), { priority: 10, group: "learn" });
-      const good = mv.filter((x) => x.value === hole.best).map((x) => `${label(x.move.from)}→${label(x.move.to)}`);
-      firstMoves.textContent = good.length === mv.length
-        ? `All ${mv.length} first moves keep the best finish: ${good.join(", ")}.`
-        : `Optimal first moves: ${good.join(", ")} (${good.length} of ${mv.length}).`;
-    } catch (e) {
-      if (!(e instanceof Cancelled)) throw e;
-    }
+
+    // 4. Closings from every hole in the family.
+    const closeSlot = slot();
+    body.append(
+      h("h3.sub", {}, "Closings"),
+      h("p", {}, "The last 8 moves of the easiest perfect game from each hole in this family. With about 9 marbles left, notice how the solver gathers them toward a finishing hole before the final jumps."),
+      h("div.chips", {}, ...family.map((x) => h("button.chip-btn", {
+        onclick: () => {
+          const moves = easyMoves(x);
+          const from = Math.max(1, moves.length - 7);
+          this.showChunk(x, from, moves.length, closeSlot, "closing");
+          closeSlot.prepend(h("p.demo-note", {}, finishNote(x.cell, moves)),
+            h("div.row", {}, h("button", { onclick: () => (location.hash = `#/practice/${x.label}/${from - 1}`) }, `Play this closing yourself (from ${x.label})`)));
+        },
+      }, `from ${x.label}`))),
+      closeSlot,
+    );
   }
 }
+
+const fmtChance = (p: number) => {
+  if (p >= 0.01) return `${(p * 100).toFixed(1)}%`;
+  const n = 1 / p, mag = 10 ** Math.max(0, Math.floor(Math.log10(n)) - 1);
+  return `about 1 in ${(Math.round(n / mag) * mag).toLocaleString()} games`;
+};
+const ordinal = (n: number) => `${n}${n === 1 ? "st" : n === 2 ? "nd" : n === 3 ? "rd" : "th"}`;
