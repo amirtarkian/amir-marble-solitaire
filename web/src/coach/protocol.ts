@@ -4,7 +4,8 @@ export type Query =
   | { kind: "value"; bits: bigint }
   | { kind: "canReach"; bits: bigint; t: number }
   | { kind: "bestLine"; bits: bigint }
-  | { kind: "moveValues"; bits: bigint };
+  | { kind: "moveValues"; bits: bigint }
+  | { kind: "grades"; bits: bigint };
 
 export type ToWorker =
   | { type: "init"; base: string }

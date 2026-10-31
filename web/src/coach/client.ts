@@ -18,6 +18,13 @@ export interface QueryOptions {
   group?: string;
 }
 
+export interface MoveGrades {
+  /** Best possible finish from the position. */
+  value: number;
+  /** Every legal move, and whether it keeps that best finish. */
+  moves: { move: Move; good: boolean }[];
+}
+
 export interface MoveValue {
   move: Move;
   value: number;
@@ -106,6 +113,16 @@ export class Coach {
     const line: Move[] = [];
     for (let i = 0; i < flat.length; i += 2) line.push(makeMove(flat[i] as Cell, flat[i + 1] as Cell));
     return line;
+  }
+
+  /** The best finish from here, and which legal moves keep it. */
+  async grades(bits: bigint, opts?: QueryOptions): Promise<MoveGrades> {
+    const flat = (await this.ask({ kind: "grades", bits }, opts)) as number[];
+    const value = flat[0];
+    this.values.set(bits, value);
+    const moves: MoveGrades["moves"] = [];
+    for (let i = 1; i < flat.length; i += 3) moves.push({ move: makeMove(flat[i], flat[i + 1]), good: flat[i + 2] === 1 });
+    return { value, moves };
   }
 
   /** Every legal move with the exact value of the position it leads to. */

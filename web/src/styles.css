@@ -404,3 +404,31 @@ svg.odds-chart { width: 100%; height: auto; display: block; cursor: crosshair; t
 .game-row:hover { background: rgba(255, 244, 230, 0.07); }
 .game-row .icon.small { padding: 2px 8px; min-width: 0; font-size: 12px; background: transparent; border-color: transparent; color: var(--muted); }
 .game-row .icon.small:hover { color: var(--warn); }
+
+/* ── Grades, explanations, advice ────────────────────────── */
+
+.grade-header { display: flex; flex-direction: column; gap: 10px; }
+.perf { display: flex; align-items: center; gap: 14px; }
+.perf-num { font: 600 44px/1 var(--serif); color: var(--gold); font-variant-numeric: tabular-nums; }
+.perf-title { font-weight: 600; }
+.grade-counts { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 13px; color: var(--muted); }
+.grade-counts strong { color: var(--text); }
+.gc.only strong { color: #c9a8ff; }
+.gc.mistake strong { color: var(--gold); }
+.gc.blunder strong { color: var(--warn); }
+.gc.helped strong { color: #8fbfff; }
+.chip.only { background: rgba(180, 140, 255, 0.22); border-color: rgba(180, 140, 255, 0.6); }
+.chip.helped { background: rgba(106, 169, 255, 0.2); border-color: rgba(106, 169, 255, 0.55); }
+.odds-chart .pending { font-size: 10px; }
+.why { display: flex; flex-direction: column; gap: 6px; background: rgba(229, 96, 60, 0.1); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+.why-title { font-weight: 600; color: #ffb39f; }
+.status.warn p { margin-bottom: 6px; }
+.principle-link { color: var(--gold); font-size: 13px; text-decoration: none; }
+.principle-link:hover { text-decoration: underline; }
+.advice-list { padding-left: 18px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
+.advice-list li::marker { color: var(--gold); }
+.advice-list .small { margin-left: 4px; }
+.tenets { padding-left: 20px; display: flex; flex-direction: column; gap: 7px; font-size: 14px; }
+.tenets a { color: var(--text); text-decoration: none; }
+.tenets a:hover strong { color: var(--gold); }
+.principle.focus { border-color: rgba(242, 193, 78, 0.6); box-shadow: 0 0 0 1px rgba(242, 193, 78, 0.25); }

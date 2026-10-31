@@ -220,6 +220,19 @@ impl Solver {
         Ok(line)
     }
 
+    /// The value of `p`, and every legal move with whether it keeps that value.
+    /// Cheaper than `move_values`: a losing move only needs one failed proof.
+    pub fn grade_moves(&mut self, p: Pos, budget: u64) -> Result<(u8, Vec<(Move, bool)>), OutOfBudget> {
+        self.start_budget(budget);
+        let v = self.value_inner(p)?;
+        let ms: Vec<Move> = moves(p).collect();
+        let mut out = Vec::with_capacity(ms.len());
+        for m in ms {
+            out.push((m, self.reach(apply(p, m), v)?));
+        }
+        Ok((v, out))
+    }
+
     /// Every legal move with the exact value of the position it leads to.
     pub fn move_values(&mut self, p: Pos, budget: u64) -> Result<Vec<(Move, u8)>, OutOfBudget> {
         self.start_budget(budget);

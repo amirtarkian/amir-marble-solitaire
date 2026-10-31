@@ -2,6 +2,7 @@
 // or keep several games going at once.
 
 import type { Cell } from "../board/geometry";
+import type { Analysis } from "../review/grade";
 import type { WireMove } from "./state";
 
 export interface SavedGame {
@@ -10,6 +11,13 @@ export interface SavedGame {
   moves: WireMove[];
   elapsed: number;
   updated: number;
+  /** Positions (by move number) where the coach showed a move or a line. */
+  help?: number[];
+  takebacks?: number;
+  /** The review's solver analysis, cached once complete (valid for `moves.length` moves). */
+  analysis?: Analysis & { moves: number };
+  /** Set once the finished game has counted toward your rating. */
+  rated?: { perf: number; before: number | null; after: number };
 }
 
 export interface KeyValueStore {

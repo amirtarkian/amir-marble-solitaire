@@ -13,6 +13,7 @@ interface Engine {
   can_reach(pos: bigint, t: number, budget: number): number;
   best_line(pos: bigint, budget: number): number;
   move_values(pos: bigint, budget: number): number;
+  grade_moves(pos: bigint, budget: number): number;
   out_ptr(): number;
 }
 
@@ -72,6 +73,10 @@ function step(e: Engine, q: Query): number | number[] | null {
     case "moveValues": {
       const n = e.move_values(q.bits, SLICE);
       return n < 0 ? null : out(e, n * 3);
+    }
+    case "grades": {
+      const n = e.grade_moves(q.bits, SLICE);
+      return n < 0 ? null : out(e, 1 + n * 3);
     }
   }
 }

@@ -41,23 +41,31 @@ published by George Bell, which the solver checks on every run.
   Hint (live best-possible meter plus a best-move button), Show me (reveals the coach's
   move as a 3D arrow for you to play, or its whole line). Suggestions never play
   themselves.
-- **Game review:** a chess.com-style graph of your odds of finishing with 1, 2, 3 or 4+
-  marbles after every move, the solver's exact best-possible finish underneath, and
-  markers where you blundered. Hover for details, click to jump, ← → to step, or replay
-  your game. Every move is graded optimal or "+k marbles", with "what should I have
-  played?" and the best line from any point. (The odds model: each remaining move is a
-  slip with probability 1 − accuracy, costing one marble; compare your accuracy with
-  Beginner, Club and Expert.)
+- **Game review and rating:** a chess.com-style graph of each game. Bars show how hard
+  every position you faced was (how many legal moves kept your best finish), coloured
+  by what you played: only move, best, coach-assisted, mistake, blunder. Lines show your
+  odds of finishing with 1, 2, 3 or 4+ marbles along the road your game took, for your
+  skill or a Beginner/Club/Expert reference. A strip underneath gives the solver's exact
+  best finish. Hover, click to jump, ← → to step, or replay the game.
+- **Performance rating:** skill is estimated from which moves you found, with more
+  credit for hard positions. Coach help counts as a miss and takebacks cost points.
+  Rating = 400 + 2000 × skill, and a running rating is kept across finished solo games.
+- **Why a move cost you:** for any costly move (in the review, or "Why?" on a Warn
+  warning), the coach compares its best line before your move with the best line after
+  it, shows where the leftover marbles get stuck, names the pattern (marble jumped into
+  a corner, marble left unreachable, corner stranding, broken shape) and links the
+  principle it breaks. Each review ends with personal "How to get better" advice and a
+  drill from just before your first mistake.
 - **Saved games:** progress is kept in your browser across tabs and reloads, and you
   can keep several games going and switch between them.
 - **Step through any line:** every best line starts paused with the next move glowing.
   Play it yourself on the board, step with Back/Next or the arrow keys, or press Play at
   ½×, 1×, 2× or 4×.
-- **Learn:** seven principles for playing (and teaching) well without memorising lines,
+- **Learn:** the tenets of the game and seven principles for playing (and teaching) well without memorising lines,
   each checked against the solver: which holes can finish with one marble, the four
   holes your last marble can land on, why the 12 corner holes can't be captured, the
   three-marble purge, and where games are usually lost. Plus the optimal first moves,
-  opening and closing for every start.
+  opening and closing for every start, and a practice plan.
 - **Solutions explorer:** a heat map of the best finish from every hole, and an animated
   perfect game for each.
 - **Race rooms:** share a link; everyone plays the same start at the same time with live

@@ -1,12 +1,17 @@
-// The review graph: odds of finishing with 1, 2, 3 or 4+ marbles after every move, a strip
-// with the solver's exact best possible finish, and markers where marbles were thrown away.
-// Hover for details; click to jump the board to that move.
+// The review graph. Top: odds of finishing with 1, 2, 3 or 4+ marbles after every move,
+// for a player of a given skill, along the road this game actually took. Middle: one bar
+// per move, as tall as the share of moves that would have thrown marbles away (how hard
+// the position was), coloured by what you played. Bottom: the solver's exact best
+// possible finish. Hover for details; click to jump the board to that move.
 
-import { finishOdds } from "../review/odds";
+import { label } from "../board/geometry";
+import type { Move } from "../game/state";
+import { KIND_COLOR, KIND_LABEL, type MoveKind } from "../review/grade";
 import { h, plural } from "./dom";
 
 const NS = "http://www.w3.org/2000/svg";
-const W = 340, L = 30, R = 332, T = 10, B = 150, STRIP_T = 160, STRIP_B = 176, H = 196;
+const W = 340, L = 30, R = 332, T = 10, B = 132;
+const BAR_B = 168, BAR_H = 28, STRIP_T = 176, STRIP_B = 190, H = 210;
 export const SERIES = [
   { name: "1 marble", color: "#f2c14e" },
   { name: "2", color: "#5fb3a1" },
@@ -14,12 +19,17 @@ export const SERIES = [
   { name: "4+", color: "#8a8f98" },
 ];
 
+type P4 = [number, number, number, number];
+
 export interface ChartData {
+  moves: Move[];
   /** Best possible finish after i moves (null while still being worked out). */
   values: (number | null)[];
-  /** Whether the last position is a finished game. */
-  over: boolean;
-  accuracy: number;
+  odds: (P4 | null)[];
+  /** Per move: good and total moves at the position it was played from (0 = unknown). */
+  good: number[];
+  total: number[];
+  kinds: (MoveKind | null)[];
   selected: number;
 }
 
@@ -38,8 +48,8 @@ export class OddsChart {
   private data: ChartData | null = null;
   private hover: number | null = null;
 
-  constructor(private moves: number, private onSelect: (i: number) => void) {
-    this.root = svg("svg", { viewBox: `0 0 ${W} ${H}`, class: "odds-chart", role: "img", "aria-label": "Odds of each finish after every move" });
+  constructor(private n: number, private onSelect: (i: number) => void) {
+    this.root = svg("svg", { viewBox: `0 0 ${W} ${H}`, class: "odds-chart", role: "img", "aria-label": "How the game went, move by move" });
     this.el = h("div.chart", {}, this.root, this.tip, this.legend);
     this.root.addEventListener("pointermove", (e) => this.setHover(this.indexAt(e)));
     this.root.addEventListener("pointerleave", () => this.setHover(null));
@@ -50,7 +60,7 @@ export class OddsChart {
   }
 
   private x(i: number) {
-    return L + ((R - L) * i) / Math.max(1, this.moves);
+    return L + ((R - L) * i) / Math.max(1, this.n);
   }
 
   private y(p: number) {
@@ -61,13 +71,7 @@ export class OddsChart {
     const r = this.root.getBoundingClientRect();
     const px = ((e.clientX - r.left) / r.width) * W;
     if (px < L - 10 || px > R + 10) return null;
-    return Math.min(this.moves, Math.max(0, Math.round(((px - L) / (R - L)) * this.moves)));
-  }
-
-  private odds(i: number) {
-    const d = this.data!, v = d.values[i];
-    if (v === null || v === undefined) return null;
-    return finishOdds(v, 36 - i, d.accuracy, d.over && i === this.moves).p;
+    return Math.min(this.n, Math.max(0, Math.round(((px - L) / (R - L)) * this.n)));
   }
 
   update(d: ChartData) {
@@ -82,98 +86,99 @@ export class OddsChart {
   }
 
   private draw() {
-    const d = this.data;
-    const g = this.root;
+    const d = this.data, g = this.root;
     while (g.firstChild) g.firstChild.remove();
     if (!d) return;
+    const cell = (R - L) / Math.max(1, this.n);
 
-    // Grid and axes.
     for (const p of [0, 0.5, 1]) {
       svg("line", { x1: L, x2: R, y1: this.y(p), y2: this.y(p), class: "grid" }, g);
       svg("text", { x: L - 5, y: this.y(p) + 3, class: "axis", "text-anchor": "end" }, g).textContent = `${p * 100}%`;
     }
-    const step = this.moves > 24 ? 10 : 5;
-    for (let i = 0; i <= this.moves; i += step) {
+    const step = this.n > 24 ? 10 : 5;
+    for (let i = 0; i <= this.n; i += step) {
       svg("text", { x: this.x(i), y: H - 4, class: "axis", "text-anchor": "middle" }, g).textContent = String(i);
     }
 
-    // Exact best possible finish, one cell per position.
-    svg("text", { x: L - 5, y: STRIP_B - 4, class: "axis", "text-anchor": "end" }, g).textContent = "best";
-    const half = (R - L) / Math.max(1, this.moves) / 2;
+    // Difficulty bars, one per move, drawn between the positions it connects.
+    svg("text", { x: L - 5, y: BAR_B - 2, class: "axis", "text-anchor": "end" }, g).textContent = "hard";
+    svg("line", { x1: L, x2: R, y1: BAR_B, y2: BAR_B, class: "grid" }, g);
+    d.moves.forEach((_, j) => {
+      const total = d.total[j], kind = d.kinds[j];
+      if (!total || !kind) return;
+      const traps = 1 - d.good[j] / total;
+      const hgt = Math.max(2, BAR_H * traps);
+      svg("rect", { x: this.x(j + 0.5) - cell * 0.38, width: cell * 0.76, y: BAR_B - hgt, height: hgt, rx: 1, fill: KIND_COLOR[kind] }, g);
+    });
+
+    // Exact best possible finish.
+    svg("text", { x: L - 5, y: STRIP_B - 3, class: "axis", "text-anchor": "end" }, g).textContent = "best";
     d.values.forEach((v, i) => {
       if (v === null) return;
-      svg("rect", {
-        x: Math.max(L, this.x(i) - half), width: Math.min(R, this.x(i) + half) - Math.max(L, this.x(i) - half),
-        y: STRIP_T, height: STRIP_B - STRIP_T, fill: SERIES[Math.min(v, 4) - 1].color, opacity: 0.85,
-      }, g);
+      const x0 = Math.max(L, this.x(i) - cell / 2), x1 = Math.min(R, this.x(i) + cell / 2);
+      svg("rect", { x: x0, width: x1 - x0, y: STRIP_T, height: STRIP_B - STRIP_T, fill: SERIES[Math.min(v, 4) - 1].color, opacity: 0.85 }, g);
     });
 
     // Where marbles were thrown away.
-    for (let i = 1; i <= this.moves; i++) {
+    for (let i = 1; i <= this.n; i++) {
       const a = d.values[i - 1], b = d.values[i];
       if (a === null || b === null || b <= a) continue;
       svg("line", { x1: this.x(i), x2: this.x(i), y1: T, y2: STRIP_B, class: "blunder-line" }, g);
       svg("circle", { cx: this.x(i), cy: (STRIP_T + STRIP_B) / 2, r: 5.5, class: b - a > 1 ? "blunder major" : "blunder minor" }, g);
     }
 
-    // Odds lines, with the chance of a one-marble finish shaded.
+    // Odds lines; the chance of a one-marble finish is shaded.
     const pts: [number, number][][] = [[], [], [], []];
-    d.values.forEach((_, i) => {
-      const o = this.odds(i);
-      if (o) o.forEach((p, k) => pts[k].push([this.x(i), this.y(p)]));
-    });
+    d.odds.forEach((o, i) => o?.forEach((p, k) => pts[k].push([this.x(i), this.y(p)])));
     if (pts[0].length > 1) {
       const area = `M${pts[0][0][0]},${B} ` + pts[0].map(([x, y]) => `L${x},${y}`).join(" ") + ` L${pts[0][pts[0].length - 1][0]},${B} Z`;
       svg("path", { d: area, fill: SERIES[0].color, opacity: 0.12 }, g);
     }
     pts.forEach((line, k) => {
-      if (line.length < 2) return;
-      svg("polyline", { points: line.map(([x, y]) => `${x},${y}`).join(" "), stroke: SERIES[k].color, class: "series" }, g);
+      if (line.length > 1) svg("polyline", { points: line.map(([x, y]) => `${x},${y}`).join(" "), stroke: SERIES[k].color, class: "series" }, g);
     });
+    if (!pts[0].length) {
+      svg("text", { x: (L + R) / 2, y: (T + B) / 2, class: "axis pending", "text-anchor": "middle" }, g).textContent = "Measuring how hard each position was…";
+    }
 
-    // Cursors: the selected move (solid) and the hovered one (dashed).
     const cursor = (i: number, cls: string) => {
       svg("line", { x1: this.x(i), x2: this.x(i), y1: T, y2: STRIP_B, class: cls }, g);
-      const o = this.odds(i);
-      o?.forEach((p, k) => svg("circle", { cx: this.x(i), cy: this.y(p), r: 3, fill: SERIES[k].color }, g));
+      d.odds[i]?.forEach((p, k) => svg("circle", { cx: this.x(i), cy: this.y(p), r: 3, fill: SERIES[k].color }, g));
     };
     cursor(d.selected, "cursor");
     if (this.hover !== null && this.hover !== d.selected) cursor(this.hover, "cursor hover");
-
     this.drawTip();
     this.drawLegend();
   }
 
-  private describe(i: number): string {
-    return i === 0 ? "Start" : `After move ${i}`;
-  }
-
   private drawTip() {
-    const i = this.hover, tip = this.tip;
-    if (i === null || !this.data) {
+    const i = this.hover, tip = this.tip, d = this.data;
+    if (i === null || !d) {
       tip.style.display = "none";
       return;
     }
-    const o = this.odds(i), v = this.data.values[i];
     while (tip.firstChild) tip.firstChild.remove();
-    tip.append(h("div.tip-title", {}, this.describe(i)));
-    if (!o || v === null) tip.append(h("div", {}, "Grading…"));
-    else {
-      tip.append(h("div.tip-best", {}, `Best possible: ${plural(v, "marble")}`));
-      SERIES.forEach((s, k) => tip.append(h("div.tip-row", {}, h("span.dot", { style: `background:${s.color}` }), ` ${s.name}`, h("span.tip-val", {}, `${Math.round(o[k] * 100)}%`))));
+    const m = d.moves[i - 1];
+    tip.append(h("div.tip-title", {}, i === 0 ? "Start" : `Move ${i}: ${label(m.from)} → ${label(m.to)}`));
+    const j = i - 1, kind = d.kinds[j];
+    if (i > 0 && d.total[j]) {
+      tip.append(h("div.tip-best", {}, `${d.good[j]} of ${plural(d.total[j], "move")} kept the best`, kind ? h("span", { style: `color:${KIND_COLOR[kind]}` }, ` · ${KIND_LABEL[kind]}`) : ""));
     }
+    const v = d.values[i];
+    if (v !== null) tip.append(h("div.tip-best", {}, `Best possible after: ${plural(v, "marble")}`));
+    const o = d.odds[i];
+    if (o) SERIES.forEach((s, k) => tip.append(h("div.tip-row", {}, h("span.dot", { style: `background:${s.color}` }), ` ${s.name}`, h("span.tip-val", {}, `${Math.round(o[k] * 100)}%`))));
     tip.style.display = "block";
-    // Sit on the side of the graph away from the cursor, so the line stays visible.
     const onRight = this.x(i) < (L + R) / 2;
     tip.style.left = onRight ? "" : "34px";
     tip.style.right = onRight ? "6px" : "";
   }
 
   private drawLegend() {
-    const d = this.data!, o = this.odds(d.selected);
+    const d = this.data!, o = d.odds[d.selected];
     const leg = this.legend;
     while (leg.firstChild) leg.firstChild.remove();
-    leg.append(h("span.legend-title", {}, `${this.describe(d.selected)}:`));
+    leg.append(h("span.legend-title", {}, d.selected === 0 ? "Start:" : `After move ${d.selected}:`));
     SERIES.forEach((s, k) => leg.append(h("span.legend-item", {}, h("span.dot", { style: `background:${s.color}` }), ` ${s.name} `, h("strong", {}, o ? `${Math.round(o[k] * 100)}%` : "…"))));
   }
 }

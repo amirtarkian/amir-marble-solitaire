@@ -94,6 +94,18 @@ pub extern "C" fn move_values(pos: Pos, budget: u32) -> i32 {
     })
 }
 
+/// Writes the position's value, then (from, to, keeps_value) triples; returns the move count.
+#[no_mangle]
+pub extern "C" fn grade_moves(pos: Pos, budget: u32) -> i32 {
+    with_solver(|s| match s.grade_moves(pos & VALID, budget as u64) {
+        Ok((v, graded)) => {
+            write_out(std::iter::once(v).chain(graded.iter().flat_map(|(m, good)| [m.from, m.to, *good as u8])));
+            graded.len() as i32
+        }
+        Err(_) => -1,
+    })
+}
+
 #[no_mangle]
 pub extern "C" fn clear() {
     with_solver(|s| s.clear());

@@ -12,6 +12,8 @@ import { GameController } from "./controller";
 import { clear, flash, formatTime, h, plural } from "./dom";
 import { miniBoard } from "./miniboard";
 import { LinePlayer } from "./playback";
+import { explain } from "../review/explain";
+import { applyPerformance } from "../review/rating";
 import { ReviewScreen } from "./review";
 
 export type CoachLevel = "off" | "warn" | "hint" | "show";
@@ -39,6 +41,9 @@ export class PlayScreen implements Screen {
   private els: Record<string, HTMLElement> = {};
   private saves = new Saves();
   private saveId: string | null = null;
+  /** Move numbers at which the coach showed a move or a line, and takebacks so far. */
+  private help = new Set<number>();
+  private takebacks = 0;
   private onPageHide = () => this.persist();
 
   constructor(private app: App, resume?: { start: Cell; moves: Move[] }) {
@@ -46,8 +51,11 @@ export class PlayScreen implements Screen {
     window.addEventListener("pagehide", this.onPageHide);
     const active = this.saves.activeId();
     const saved = active ? this.saves.get(active) : undefined;
-    if (resume) this.begin(resume.start, resume.moves);
-    else if (saved) this.resumeSaved(saved);
+    if (resume) {
+      this.begin(resume.start, resume.moves);
+      // A #/play/<hole> link starts one game; reloading should resume it, not start another.
+      history.replaceState(null, "", "#/play");
+    } else if (saved) this.resumeSaved(saved);
     else this.pick();
   }
 
@@ -110,13 +118,35 @@ export class PlayScreen implements Screen {
   private persist() {
     const g = this.ctl?.game;
     if (!g || !this.saveId) return;
-    this.saves.put({ id: this.saveId, start: g.start, moves: g.history.map(toWire), elapsed: this.elapsed, updated: Date.now() });
+    const prev = this.saves.get(this.saveId);
+    const moves = g.history.map(toWire);
+    const sameMoves = !!prev && JSON.stringify(prev.moves) === JSON.stringify(moves);
+    this.saves.put({
+      id: this.saveId, start: g.start, moves, elapsed: this.elapsed, updated: Date.now(),
+      help: [...this.help], takebacks: this.takebacks,
+      analysis: sameMoves ? prev.analysis : undefined,
+      rated: prev?.rated,
+    });
+  }
+
+  /** The coach just showed the player a move or a line at the current position. */
+  private markHelp(count = 1) {
+    const at = this.ctl?.game.history.length ?? 0;
+    for (let i = 0; i < count; i++) this.help.add(at + i);
+    this.persist();
+  }
+
+  /** Help and takebacks carried into a branch that keeps the first `moves` moves. */
+  private carried(moves: number) {
+    return { help: [...this.help].filter((i) => i < moves), takebacks: this.takebacks };
   }
 
   private resumeSaved(saved: SavedGame) {
     this.persist();
     try {
-      this.begin(saved.start, saved.moves.map(([f, t]) => makeMove(f, t)), { id: saved.id, elapsed: saved.elapsed });
+      this.begin(saved.start, saved.moves.map(([f, t]) => makeMove(f, t)), {
+        id: saved.id, elapsed: saved.elapsed, help: saved.help, takebacks: saved.takebacks,
+      });
     } catch {
       this.saves.remove(saved.id); // unreadable save
       this.pick();
@@ -173,7 +203,7 @@ export class PlayScreen implements Screen {
   // ── Playing ──────────────────────────────────────────────────────────
 
   /** Start or resume a game; pass the saved id to keep writing to the same save. */
-  private begin(start: Cell, moves: Move[], opts: { id?: string | null; elapsed?: number } = {}) {
+  private begin(start: Cell, moves: Move[], opts: { id?: string | null; elapsed?: number; help?: number[]; takebacks?: number } = {}) {
     this.preview?.stop();
     this.preview = null;
     this.app.view.setHeat(null);
@@ -184,6 +214,8 @@ export class PlayScreen implements Screen {
     this.saveId = opts.id ?? newGameId();
     this.saves.setActive(this.saveId);
     this.elapsed = opts.elapsed ?? 0;
+    this.help = new Set((opts.help ?? []).filter((i) => i <= moves.length));
+    this.takebacks = opts.takebacks ?? 0;
     this.persist();
     this.startTimer();
     this.renderPlay();
@@ -255,7 +287,9 @@ export class PlayScreen implements Screen {
   }
 
   private undo(): Promise<void> {
-    return this.ctl?.game.canUndo ? this.ctl.undo() : this.unpick();
+    if (!this.ctl?.game.canUndo) return this.unpick();
+    this.takebacks++;
+    return this.ctl.undo();
   }
 
   /** Before the first move: return the starting marble to its hole and choose again. */
@@ -358,10 +392,38 @@ export class PlayScreen implements Screen {
       flash("warn");
       this.setStatus([
         `${label(last.from)}→${label(last.to)} costs you ${marbleWord(va - vb)}: best possible is now ${va}. `,
-        h("button.small", { onclick: () => void this.ctl?.undo() }, "Undo it"),
+        h("button.small", { onclick: () => void this.whyLast() }, "Why?"),
+        " ",
+        h("button.small", { onclick: () => void this.undo() }, "Undo it"),
       ], "warn");
     } catch (e) {
       if (!(e instanceof Cancelled)) throw e;
+    }
+  }
+
+  /** Explain why the last move cost marbles, by comparing exact lines. */
+  private async whyLast() {
+    const coach = this.app.coach, ctl = this.ctl;
+    const last = ctl?.game.history[ctl.game.history.length - 1];
+    if (!coach || !ctl || !last) return;
+    const gen = this.gen;
+    const before = Game.replay(ctl.game.start, ctl.game.history.slice(0, -1));
+    this.setStatus([h("span.thinking", {}, "Working out why…")], "warn");
+    try {
+      const [lb, la] = await Promise.all([
+        coach.bestLine(before.bits(), { priority: 10, group: "live" }),
+        coach.bestLine(ctl.game.bits(), { priority: 10, group: "live" }),
+      ]);
+      if (gen !== this.gen) return;
+      const e = explain(before.board, last, lb, la);
+      this.setStatus([
+        ...e.reasons.map((r) => h("p", {}, r)),
+        h("div.row", {},
+          h("button.small", { onclick: () => void this.undo() }, "Undo it"),
+          e.principle ? h("a.principle-link", { href: `#/learn/${e.principle}` }, `Principle ${e.principle} →`) : null),
+      ], "warn");
+    } catch (err) {
+      if (!(err instanceof Cancelled)) throw err;
     }
   }
 
@@ -374,6 +436,7 @@ export class PlayScreen implements Screen {
       const line = await coach.bestLine(g.bits(), { priority: 10, group: "live" });
       if (gen !== this.gen || !line.length) return;
       this.app.view.setHint(line[0]);
+      this.markHelp();
       this.setStatus([`Try ${label(line[0].from)} → ${label(line[0].to)}: follow the arrow.`], "hint");
     } catch (e) {
       if (!(e instanceof Cancelled)) throw e;
@@ -390,6 +453,7 @@ export class PlayScreen implements Screen {
       const line = await coach.bestLine(ctl.game.bits(), { priority: 10, group: "live" });
       if (gen !== this.gen || !line.length) return;
       this.app.view.setHint(line[0]);
+      this.markHelp();
       this.setStatus([`Coach's move: ${label(line[0].from)} → ${label(line[0].to)}. Follow the arrow and play it yourself.`], "hint");
     } catch (e) {
       if (!(e instanceof Cancelled)) throw e;
@@ -408,6 +472,7 @@ export class PlayScreen implements Screen {
       throw e;
     }
     await ctl.settle();
+    this.markHelp();
     ctl.detach();
     this.stopTimer();
     const finish = ctl.game.marbles - line.length;
@@ -435,7 +500,8 @@ export class PlayScreen implements Screen {
     player.stop();
     this.preview = null;
     const moves = adopt ? [...ctl.game.history, ...player.moves] : [...ctl.game.history];
-    this.begin(ctl.game.start, moves, { id: this.saveId, elapsed: this.elapsed });
+    if (adopt) this.markHelp(player.moves.length); // coach-played moves count as help
+    this.begin(ctl.game.start, moves, { id: this.saveId, elapsed: this.elapsed, ...this.carried(moves.length) });
   }
 
   // ── End of game ──────────────────────────────────────────────────────
@@ -465,7 +531,7 @@ export class PlayScreen implements Screen {
       h("div.row",
         {},
         h("button.primary", { onclick: () => this.review() }, "Review game"),
-        h("button", { onclick: () => void this.ctl?.undo().then(() => { this.renderPlay(); this.startTimer(); }) }, "Undo last move"),
+        h("button", { onclick: () => void this.undo().then(() => { this.renderPlay(); this.startTimer(); }) }, "Undo last move"),
       ),
       h("div.row",
         {},
@@ -477,16 +543,34 @@ export class PlayScreen implements Screen {
 
   private review() {
     const g = this.ctl!.game;
+    this.persist();
     this.ctl!.detach();
-    const start = g.start, moves = [...g.history];
+    const start = g.start, moves = [...g.history], id = this.saveId, elapsed = this.elapsed;
+    const saved = id ? this.saves.get(id) : undefined;
     const r = new ReviewScreen(this.app, start, moves, {
       onPlayFrom: (prefix) => {
         r.unmount();
-        this.begin(start, prefix, { id: this.saveId, elapsed: this.elapsed });
+        this.begin(start, prefix, { id, elapsed, ...this.carried(prefix.length) });
       },
       onClose: () => {
         r.unmount();
-        this.begin(start, moves, { id: this.saveId, elapsed: this.elapsed });
+        this.begin(start, moves, { id, elapsed, ...this.carried(moves.length) });
+      },
+    }, {
+      help: new Set(this.help),
+      takebacks: this.takebacks,
+      analysis: saved?.analysis?.moves === moves.length ? saved.analysis : undefined,
+      onAnalysis: (a) => {
+        const cur = id ? this.saves.get(id) : undefined;
+        if (cur) this.saves.put({ ...cur, analysis: { ...a, moves: moves.length } });
+      },
+      rate: (perf) => {
+        const cur = id ? this.saves.get(id) : undefined;
+        if (!cur || !g.isOver) return null;
+        if (cur.rated) return { ...cur.rated, fresh: false };
+        const rated = { perf, ...applyPerformance(perf) };
+        this.saves.put({ ...cur, rated });
+        return { ...rated, fresh: true };
       },
     });
   }

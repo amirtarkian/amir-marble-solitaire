@@ -24,13 +24,13 @@ async function boot() {
     const [, name = "play", arg] = location.hash.split("/");
     screen?.unmount();
     document.querySelectorAll<HTMLAnchorElement>("nav a").forEach((a) => a.classList.toggle("on", a.dataset.route === name));
+    panel.scrollTop = 0; // before the screen renders, so it can scroll somewhere itself
     const start = name === "play" && arg ? parseLabel(arg) : null;
     screen =
       name === "solutions" ? new ExplorerScreen(app)
-      : name === "learn" ? new LearnScreen(app)
+      : name === "learn" ? new LearnScreen(app, arg)
       : name === "race" ? new RaceScreen(app, arg)
       : new PlayScreen(app, start === null ? undefined : { start, moves: [] });
-    panel.scrollTop = 0;
   };
   window.addEventListener("hashchange", route);
   route();

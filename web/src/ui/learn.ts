@@ -72,9 +72,14 @@ export class LearnScreen implements Screen {
   private finishNote = h("p.demo-note");
   private openingBody = h("div.opening-body");
 
-  constructor(private app: App) {
+  constructor(private app: App, focus?: string) {
     this.render();
     this.showBestPerHole();
+    const card = focus ? document.getElementById(`principle-${focus}`) : null;
+    if (card) {
+      card.scrollIntoView({ block: "start" });
+      card.classList.add("focus");
+    }
   }
 
   unmount() {
@@ -154,7 +159,7 @@ export class LearnScreen implements Screen {
     const slot = h("div.demo-slot");
     this.slots.push(slot);
     return h("section.card.principle",
-      {},
+      { id: `principle-${n}` },
       h("div.card-head", {}, h("h2", {}, h("span.num", {}, String(n)), title)),
       ...body.map((b) => (typeof b === "string" ? h("p", {}, b) : b)),
       demo ? h("div.row", {}, h("button", { onclick: () => demo.run(slot) }, demo.label)) : null,
@@ -171,17 +176,22 @@ export class LearnScreen implements Screen {
     panel.append(
       h("section.card",
         {},
-        h("h2", {}, "How to get good"),
-        h("p", {}, "You don't need to memorise lines. These ideas are enough to play well and to teach the game, and each one is checked against the solver's perfect games."),
-        h("ul.tips",
+        h("h2", {}, "The tenets of the game"),
+        h("p", {}, "The rules take a minute: jump one marble over a neighbour, up, down, left or right, into the empty hole beyond, and take the jumped marble off. The game ends when no jump is left; fewer marbles is better."),
+        h("p", {}, "Playing well comes down to seven tenets. You don't need to memorise lines; these are enough to play well and to teach someone else, and each one is checked against the solver's perfect games. Tap one to jump to it."),
+        h("ol.tenets",
           {},
-          h("li", {}, "Want a one-marble finish? Start on a gold hole."),
-          h("li", {}, "Before move 1, know the four holes your last marble can end on."),
-          h("li", {}, "Get corner marbles out before the endgame. Nothing can jump over them."),
-          h("li", {}, "Clear blocks with a catalyst marble instead of grabbing random jumps."),
-          h("li", {}, "Play the opening quickly. Slow down from about move 8 to move 20."),
-          h("li", {}, "With about 8 marbles left, plan the finish backwards from your target hole."),
-          h("li", {}, "Practise with the coach on Warn: it flags exactly the jumps that cost you."),
+          ...[
+            [1, "Your start sets your ceiling.", "16 holes can finish with one marble; the rest can't beat two."],
+            [2, "Know where you're heading.", "Each one-marble start has exactly four possible last holes."],
+            [3, "Corners can't be captured.", "Get corner marbles out while they still have company."],
+            [4, "Clear blocks in packages.", "Use a catalyst to remove three in a row, then repeat."],
+            [5, "Lonely marbles are fine, if you can reach them.", "Isolation isn't the enemy; unreachability is."],
+            [6, "The middle game decides it.", "Play the opening briskly, then slow down from move 8 to 20."],
+            [7, "Plan the finish backwards.", "With about 8 marbles left, work back from your target hole."],
+          ].map(([n, title, line]) => h("li", {},
+            h("a", { href: `#/learn/${n}`, onclick: (e: Event) => this.focusPrinciple(e, n as number) }, h("strong", {}, title as string)),
+            ` ${line}`)),
         ),
       ),
       this.principle(1, "Your start sets your ceiling", [
@@ -219,7 +229,28 @@ export class LearnScreen implements Screen {
         "With about 8 marbles left, stop and work back from your target hole: which jump lands the last marble there, which jump sets that up, and so on. The closings below show the solver funnelling its last marbles in.",
       ]),
       this.openingsCard(),
+      h("section.card",
+        {},
+        h("h2", {}, "A practice plan"),
+        h("ol.tenets",
+          {},
+          h("li", {}, h("strong", {}, "Learn the purge."), " Watch principle 4 until you can spot three-in-a-row packages on a full board."),
+          h("li", {}, h("strong", {}, "Play d5 with the coach on Warn."), " It speaks up only when a jump costs you; press Why? to see the reason, then undo and find a better move."),
+          h("li", {}, h("strong", {}, "Review every game."), " Read the \"Why it cost you\" notes, then do the drill it suggests from just before your first mistake."),
+          h("li", {}, h("strong", {}, "Go rated."), " Turn the coach Off. Hints and takebacks lower your rating, so finding moves yourself is what moves it up."),
+          h("li", {}, h("strong", {}, "Branch out."), " Work through every start family above, then the two-marble starts, where the margin for error is different."),
+        ),
+      ),
     );
+  }
+
+  private focusPrinciple(e: Event, n: number) {
+    e.preventDefault();
+    const card = document.getElementById(`principle-${n}`);
+    if (!card) return;
+    card.scrollIntoView({ behavior: "smooth", block: "start" });
+    document.querySelectorAll(".principle.focus").forEach((c) => c.classList.remove("focus"));
+    card.classList.add("focus");
   }
 
   private openingsCard(): HTMLElement {

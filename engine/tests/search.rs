@@ -77,3 +77,20 @@ fn budget_runs_out_cleanly() {
     let mut s = Solver::new();
     assert_eq!(s.value(start(CENTRE), 1_000), Err(OutOfBudget));
 }
+
+#[test]
+fn grade_moves_marks_exactly_the_moves_that_keep_the_value() {
+    let mut seed = 77u64;
+    let mut s = Solver::new();
+    for _ in 0..60 {
+        let mut p = 0u64;
+        while p.count_ones() < 11 {
+            p |= 1 << CELLS[(rng(&mut seed) % 37) as usize];
+        }
+        let (v, graded) = s.grade_moves(p, UNLIMITED).unwrap();
+        assert_eq!(v, naive_value(p));
+        for (m, good) in graded {
+            assert_eq!(good, naive_value(apply(p, m)) == v, "move {m:?} in {p:#x}");
+        }
+    }
+}
