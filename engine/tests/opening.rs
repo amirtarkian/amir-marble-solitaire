@@ -12,6 +12,32 @@ fn compact_keeps_order_and_all_37_bits() {
 }
 
 #[test]
+fn expand_inverts_compact() {
+    for &h in CELLS.iter() {
+        let p = start(h);
+        assert_eq!(expand(compact(p)), p);
+    }
+}
+
+#[test]
+fn round_trip_keeps_every_value_including_escapes() {
+    let mut seed = 3u64;
+    let mut entries = Vec::new();
+    for i in 0..5000 {
+        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        let p = canon((seed >> 11) & VALID);
+        let v = lower_bound(p) + 1 + (i % 5) as u8; // codes 0..2 and escapes
+        entries.push((p, v.min(15)));
+    }
+    let t = OpeningTable::new(0, entries.clone());
+    let back = OpeningTable::decode(&t.encode()).unwrap();
+    assert_eq!(back.len(), t.len());
+    for (p, v) in entries {
+        assert_eq!(back.lookup(p, p), Some(v), "{p:#x}");
+    }
+}
+
+#[test]
 fn encode_decode_round_trip_and_lookup() {
     let entries: Vec<(Pos, u8)> = CELLS.iter().map(|&h| (canon(start(h)), 3)).collect();
     let table = OpeningTable::new(36, entries);
@@ -32,5 +58,5 @@ fn encode_decode_round_trip_and_lookup() {
 #[test]
 fn decode_rejects_garbage() {
     assert!(OpeningTable::decode(b"nope").is_err());
-    assert!(OpeningTable::decode(b"MSOP\x01\x20\x05\x00\x00\x00").is_err());
+    assert!(OpeningTable::decode(b"MSOP\x02\x20\x05\x00\x00\x00\x03").is_err());
 }

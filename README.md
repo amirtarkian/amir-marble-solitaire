@@ -86,7 +86,7 @@ of free disk while it runs):
 ```bash
 cargo run --release -p solver -- solve            # all 8 starts → data-cache/
 cargo run --release -p solver -- bench            # live-search cost per level
-cargo run --release -p solver -- build-data 9     # web/public/data/
+cargo run --release -p solver -- build-data 10    # web/public/data/
 ```
 
 Pushing to `main` deploys to GitHub Pages via `.github/workflows/pages.yml`.
