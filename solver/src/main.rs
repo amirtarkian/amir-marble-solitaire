@@ -9,7 +9,7 @@
 use engine::board::{apply, label, moves, parse_label, start, Move, Pos, CELLS};
 use engine::class::lower_bound;
 use engine::opening::OpeningTable;
-use engine::search::{Solver, UNLIMITED};
+use engine::search::Solver;
 use engine::symmetry::{canon, orbit_rep, ORBIT_REPS};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -320,7 +320,9 @@ fn solve(rep: u8, keep_levels: bool) {
 }
 
 fn bench() {
-    // Per level: how expensive is a cold live proof, and does it agree with the solve?
+    // Per level, from the endgame upwards: how expensive is a cold live proof, and does
+    // it agree with the exhaustive solve? Stops once most positions blow the budget.
+    const BUDGET: u64 = 40_000_000;
     let mut by_level: BTreeMap<u32, Vec<(Pos, u8)>> = BTreeMap::new();
     for &rep in ORBIT_REPS.iter() {
         let path = format!("{CACHE}/{}.sample.bin", label(rep));
@@ -330,32 +332,37 @@ fn bench() {
             }
         }
     }
-    println!("marbles   n   median_ms     p90_ms     max_ms   max_nodes");
-    for (&k, recs) in by_level.iter().rev() {
-        if k > 33 {
-            continue; // the first moves are always covered by the opening table
+    println!("marbles   n   median_ms     p90_ms     max_ms   over_budget");
+    for (&k, recs) in by_level.iter() {
+        if k < 8 {
+            continue;
         }
-        let mut times: Vec<(f64, u64)> = recs
+        // Spread the 120 samples across all starts.
+        let stride = (recs.len() / 120).max(1);
+        let picked: Vec<(Pos, u8)> = recs.iter().step_by(stride).copied().collect();
+        let mut times: Vec<Option<f64>> = picked
             .par_iter()
-            .take(120)
             .map(|&(p, v)| {
-                let mut s = Solver::new();
+                let mut s = Solver::with_table_bits(22);
                 let t = Instant::now();
-                let got = s.value(p, UNLIMITED).unwrap();
-                assert_eq!(got, v, "live search disagrees with the exhaustive solve on {p:#x}");
-                (t.elapsed().as_secs_f64() * 1e3, s.nodes())
+                match s.value(p, BUDGET) {
+                    Ok(got) => {
+                        assert_eq!(got, v, "live search disagrees with the exhaustive solve on {p:#x}");
+                        Some(t.elapsed().as_secs_f64() * 1e3)
+                    }
+                    Err(_) => None,
+                }
             })
             .collect();
-        times.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        let over = times.iter().filter(|t| t.is_none()).count();
         let n = times.len();
-        let max_nodes = times.iter().map(|t| t.1).max().unwrap_or(0);
-        println!(
-            "{k:7} {n:3} {:11.1} {:10.1} {:10.1} {max_nodes:11}",
-            times[n / 2].0,
-            times[n * 9 / 10].0,
-            times[n - 1].0
-        );
+        times.sort_by(|a, b| a.unwrap_or(f64::MAX).partial_cmp(&b.unwrap_or(f64::MAX)).unwrap());
+        let ms = |i: usize| times[i].map_or("budget".to_string(), |t| format!("{t:.1}"));
+        println!("{k:7} {n:3} {:>11} {:>10} {:>10} {over:11}", ms(n / 2), ms(n * 9 / 10), ms(n - 1));
         std::io::stdout().flush().unwrap();
+        if over * 2 > n {
+            break;
+        }
     }
 }
 

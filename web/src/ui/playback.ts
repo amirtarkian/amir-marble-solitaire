@@ -25,9 +25,9 @@ export class LinePlayer {
     this.el = h("div.player",
       {},
       h("button.icon", { title: "Back to start", onclick: () => this.seek(0) }, "⏮"),
-      h("button.icon", { title: "Step back", onclick: () => this.step(-1) }, "◀"),
+      h("button.icon", { title: "Step back", onclick: () => this.step(-1) }, "‹"),
       this.playBtn,
-      h("button.icon", { title: "Step forward", onclick: () => this.step(1) }, "▶▶"),
+      h("button.icon", { title: "Step forward", onclick: () => this.step(1) }, "›"),
       h("button.icon", { title: "To the end", onclick: () => this.seek(this.line.length) }, "⏭"),
       this.counter,
     );

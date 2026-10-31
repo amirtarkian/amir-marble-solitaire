@@ -4,7 +4,7 @@
 import { type App, type Screen, storageGet, storageSet } from "../app";
 import { HOLES, label } from "../board/geometry";
 import { startBoard, toWire } from "../game/state";
-import { RaceRoom } from "../net/room";
+import type { RaceRoom } from "../net/room";
 import { type Player, type RaceEvent, type RaceMessage, type RaceState, hostId, initialState, isHost, marblesLeft, reduce, standings } from "../net/race";
 import { GameController } from "./controller";
 import { clear, formatTime, h, plural } from "./dom";
@@ -33,13 +33,15 @@ export class RaceScreen implements Screen {
   private countdownEl: HTMLElement | null = null;
   private review: ReviewScreen | null = null;
   private renderedPhase = "";
+  private closed = false;
 
   constructor(private app: App, private roomId?: string) {
     if (!roomId) this.landing();
-    else this.join(roomId);
+    else void this.join(roomId);
   }
 
   unmount() {
+    this.closed = true;
     clearInterval(this.ticker);
     this.countdownEl?.remove();
     this.review?.unmount();
@@ -76,7 +78,12 @@ export class RaceScreen implements Screen {
 
   // ── Networking ───────────────────────────────────────────────────────
 
-  private join(roomId: string) {
+  private async join(roomId: string) {
+    const { panel } = this.app;
+    clear(panel);
+    panel.append(h("section.card", {}, h("h2", {}, "Joining room…"), h("p.muted", {}, roomId)));
+    const { RaceRoom } = await import("../net/room");
+    if (this.closed) return;
     const room = new RaceRoom(roomId, {
       onEvent: (ev) => this.dispatch(ev),
       onPeerJoin: (id) => this.greet(id),
