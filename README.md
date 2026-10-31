@@ -20,6 +20,16 @@ Every starting hole was solved by checking every reachable position (counted onc
 symmetry of the board). "Best" is the fewest marbles anyone can finish with.
 
 <!-- solved-table:start -->
+| Starting hole (and its mirror images) | Best | Reachable positions |
+|---|---|---|
+| d5 c4 e4 d3 | **1** | 1,495,337,603 |
+| d6 b4 f4 d2 | **1** | 1,550,858,506 |
+| c7 e7 a5 g5 a3 g3 c1 e1 | **1** | 1,824,977,263 |
+| d4 | **2** | 374,349,517 |
+| d7 a4 g4 d1 | **2** | 374,349,517 |
+| c5 e5 c3 e3 | **2** | 1,872,339,820 |
+| c6 e6 b5 f5 b3 f3 c2 e2 | **2** | 1,682,920,577 |
+| b6 f6 b2 f2 | **2** | 1,316,060,202 |
 <!-- solved-table:end -->
 
 The centre start's count (374,349,517 positions, best finish 2) matches the figure

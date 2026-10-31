@@ -43,7 +43,7 @@ export class ExplorerScreen implements Screen {
           { onclick: () => this.open(holes[0].cell) },
           h("td", {}, h("span.dot", { style: `background:${heatColor(o.best)}` }), " ", holes.map((s) => s.label).join(" ")),
           h("td.num", {}, String(o.best)),
-          h("td.num", {}, (o.reachable / 1e6).toFixed(o.reachable < 1e9 ? 0 : 0) + "M"),
+          h("td.num", {}, o.reachable >= 1e9 ? `${(o.reachable / 1e9).toFixed(2)}B` : `${Math.round(o.reachable / 1e6)}M`),
         );
       });
     panel.append(h("section.card",
